@@ -1021,7 +1021,7 @@ WatchdogThreadMain(LPVOID parameter)
 	    exiting = 1;
 	    break;
 	} else {
-	    cerr << "Remote VST plugin watchdog: OK, count is " << count << endl;
+//	    cerr << "Remote VST plugin watchdog: OK, count is " << count << endl;
 	}
 	sleep(1);
     }
@@ -1357,10 +1357,16 @@ WinMain(HINSTANCE hInst, HINSTANCE hPrevInst, LPSTR cmdline, int cmdshow)
 
 	if (exiting) break;
 
-	if (guiVisible) {
-	    remoteVSTServerInstance->dispatchControl(10);
-	} else {
-	    remoteVSTServerInstance->dispatchControl(500);
+	try {
+	    if (guiVisible) {
+		remoteVSTServerInstance->dispatchControl(10);
+	    } else {
+		remoteVSTServerInstance->dispatchControl(500);
+	    }
+	} catch (RemotePluginClosedException) {
+	    cerr << "ERROR: Remote VST plugin communication failure" << endl;
+	    exiting = true;
+	    break;
 	}
 
 	remoteVSTServerInstance->checkGUIExited();

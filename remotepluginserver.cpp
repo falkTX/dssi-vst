@@ -174,18 +174,22 @@ RemotePluginServer::dispatch(int timeout)
     
     pfd[0].fd = m_controlRequestFd;
     pfd[1].fd = m_processFd;
-    pfd[0].events = pfd[1].events = POLLIN | POLLERR | POLLHUP;
+    pfd[0].events = pfd[1].events = POLLIN | POLLPRI | POLLERR | POLLHUP | POLLNVAL;
 
     if (poll(pfd, 2, timeout) < 0) {
 	throw RemotePluginClosedException();
     }
     
-    if (pfd[0].revents & POLLIN) {
+    if ((pfd[0].revents & POLLIN) || (pfd[0].revents & POLLPRI)) {
 	dispatchControl();
+    } else if (pfd[1].revents) {
+	throw RemotePluginClosedException();
     }
     
-    if (pfd[1].revents & POLLIN) {
+    if ((pfd[1].revents & POLLIN) || (pfd[1].revents & POLLPRI)) {
 	dispatchProcess();
+    } else if (pfd[1].revents) {
+	throw RemotePluginClosedException();
     }
 }
 
@@ -195,14 +199,16 @@ RemotePluginServer::dispatchControl(int timeout)
     struct pollfd pfd;
     
     pfd.fd = m_controlRequestFd;
-    pfd.events = POLLIN | POLLERR | POLLHUP;
+    pfd.events = POLLIN | POLLPRI | POLLERR | POLLHUP | POLLNVAL;
 
     if (poll(&pfd, 1, timeout) < 0) {
 	throw RemotePluginClosedException();
     }
     
-    if (pfd.revents & POLLIN) {
+    if ((pfd.revents & POLLIN) || (pfd.revents & POLLPRI)) {
 	dispatchControlEvents();
+    } else if (pfd.revents) {
+	throw RemotePluginClosedException();
     }
 }
 
@@ -212,14 +218,16 @@ RemotePluginServer::dispatchProcess(int timeout)
     struct pollfd pfd;
     
     pfd.fd = m_processFd;
-    pfd.events = POLLIN | POLLERR | POLLHUP;
+    pfd.events = POLLIN | POLLPRI | POLLERR | POLLHUP | POLLNVAL;
 
     if (poll(&pfd, 1, timeout) < 0) {
 	throw RemotePluginClosedException();
     }
     
-    if (pfd.revents & POLLIN) {
+    if ((pfd.revents & POLLIN) || (pfd.revents & POLLPRI)) {
 	dispatchProcessEvents();
+    } else if (pfd.revents) {
+	throw RemotePluginClosedException();
     }
 }
 
