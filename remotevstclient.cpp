@@ -207,6 +207,12 @@ RemoteVSTClient::queryPlugins(std::vector<PluginRecord> &plugins)
 
     try {
 	char buffer[64];
+	int version = 0;
+
+	tryRead(fd, &version, sizeof(int));
+	if (version != int(RemotePluginVersion * 1000)) {
+	    throw ((std::string)"Plugin scanner version mismatch");
+	}
 
 	while (1) {
 

@@ -133,6 +133,9 @@ WinMain(HINSTANCE hInst, HINSTANCE hPrevInst, LPSTR cmdline, int cmdshow)
 	}
     }
 
+    int version = int(RemotePluginVersion * 1000);
+    write(targetfd, &version, sizeof(int));
+
     HINSTANCE libHandle = 0;
 
     std::vector<std::string> vstPath = Paths::getPath
@@ -206,14 +209,28 @@ WinMain(HINSTANCE hInst, HINSTANCE hPrevInst, LPSTR cmdline, int cmdshow)
 	
 		struct stat st;
 		if (!stat(cacheFileName.c_str(), &st)) {
-		    haveCache = true;
-		} else {
+		    int testfd = open(cacheFileName.c_str(), O_RDONLY);
+		    if (testfd >= 0) {
+			int testVersion = 0;
+			if (read(testfd, &testVersion, sizeof(int)) == sizeof(int) &&
+			    testVersion == version) {
+			    haveCache = true;
+			} else {
+			    cerr << "dssi-vst-scanner: Cache version mismatch for file "
+				 << cacheFileName << " (" << testVersion << ", wanted "
+				 << version << ") - rewriting" << endl;
+			}
+			close(testfd);
+		    }
+		}
+		if (!haveCache) {
 		    if ((fd = open(cacheFileName.c_str(), O_WRONLY | O_CREAT, 0644)) < 0) {
 			cerr << "dssi-vst-scanner: Failed to open cache file " << cacheFileName;
 			perror(" for writing");
 			fd = targetfd;
 		    } else {
 			writingCache = true;
+			write(fd, &version, sizeof(int));
 		    }
 		}
 	    }
@@ -352,9 +369,15 @@ WinMain(HINSTANCE hInst, HINSTANCE hPrevInst, LPSTR cmdline, int cmdshow)
 		    cerr << "dssi-vst-scanner: Failed to open cache file " << cacheFileName;
 		    perror("for reading");
 		} else {
-		    unsigned char c;
-		    while (read(fd, &c, 1) == 1) {
-			write(targetfd, &c, 1);
+		    int testVersion = 0;
+		    if (read(fd, &testVersion, sizeof(int)) != sizeof(int) ||
+			testVersion != version) {
+			cerr << "dssi-vst-scanner: Internal error: cache file " << cacheFileName << " verified earlier, but now fails version test (" << testVersion << " != " << version << ")" << endl;
+		    } else {
+			unsigned char c;
+			while (read(fd, &c, 1) == 1) {
+			    write(targetfd, &c, 1);
+			}
 		    }
 		    close(fd);
 		}
