@@ -19,7 +19,6 @@
 #include <windows.h>
 
 #include "aeffectx.h"
-#include "AEffEditor.hpp"
 
 #include "remotepluginserver.h"
 
@@ -27,6 +26,13 @@
 
 #define APPLICATION_CLASS_NAME "dssi_vst"
 #define PLUGIN_ENTRY_POINT "main"
+
+struct Rect {
+    short top;
+    short left;
+    short bottom;
+    short right;
+};
 
 static bool inProcessThread = false;
 static bool exiting = false;
@@ -690,7 +696,7 @@ WinMain(HINSTANCE hInst, HINSTANCE hPrevInst, LPSTR cmdline, int cmdshow)
     }
 
     plugin->dispatcher(plugin, effEditOpen, 0, 0, hWnd, 0);
-    ERect *rect = 0;
+    Rect *rect = 0;
     plugin->dispatcher(plugin, effEditGetRect, 0, 0, &rect, 0);
     if (!rect) {
 	cerr << "dssi-vst-server: ERROR: Plugin failed to report window size\n" << endl;

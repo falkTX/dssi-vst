@@ -21,7 +21,6 @@
 #include <windows.h>
 
 #include "aeffectx.h"
-#include "AEffEditor.hpp"
 
 #include "remotepluginserver.h"
 #include "paths.h"
