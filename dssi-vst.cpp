@@ -182,6 +182,8 @@ DSSIVSTPluginInstance::DSSIVSTPluginInstance(std::string dllName,
 	    snd_midi_event_no_status(m_alsaDecoder, 1);
 	}
 
+	std::cerr << "DSSIVSTPluginInstance(" << this << "): setting OK true" << std::endl;
+
 	m_ok = true;
 
     } catch (RemotePluginClosedException) {
@@ -195,6 +197,8 @@ DSSIVSTPluginInstance::DSSIVSTPluginInstance(std::string dllName,
 	delete m_audioIns; m_audioIns = 0;
 	delete m_audioOuts; m_audioOuts = 0;
     }
+
+    std::cerr << "DSSIVSTPluginInstance::DSSIVSTPluginInstance(" << dllName << ") construction complete" << std::endl;
 }
 
 DSSIVSTPluginInstance::~DSSIVSTPluginInstance()
@@ -317,34 +321,34 @@ DSSIVSTPluginInstance::selectProgram(unsigned long bank, unsigned long program)
 void
 DSSIVSTPluginInstance::run(unsigned long sampleCount)
 {
-    if (m_ok) {
-	try {
-	    if (sampleCount != m_lastSampleCount) {
-		m_plugin->setBufferSize(sampleCount);
-		m_lastSampleCount = sampleCount;
-		if (m_latencyOut) *m_latencyOut = sampleCount;
-	    }
+    if (!m_ok) return;
 
-	    int modifiedCount = 0;
-
-	    for (unsigned long i = 0; i < m_controlPortCount; ++i) {
-
-		if (!m_controlPorts[i]) continue;
-
-		if (m_controlPortsSaved[i] != *m_controlPorts[i]) {
+    try {
+	if (sampleCount != m_lastSampleCount) {
+	    m_plugin->setBufferSize(sampleCount);
+	    m_lastSampleCount = sampleCount;
+	    if (m_latencyOut) *m_latencyOut = sampleCount;
+	}
+	
+	int modifiedCount = 0;
+	
+	for (unsigned long i = 0; i < m_controlPortCount; ++i) {
+	    
+	    if (!m_controlPorts[i]) continue;
+	    
+	    if (m_controlPortsSaved[i] != *m_controlPorts[i]) {
 //		    std::cout << "Sending new value " << *m_controlPorts[i]
 //			      << " for control port " << i << std::endl;
-		    m_plugin->setParameter(i, *m_controlPorts[i]);
-		    m_controlPortsSaved[i] =  *m_controlPorts[i];
-		    if (++modifiedCount > 10) break;
-		}
+		m_plugin->setParameter(i, *m_controlPorts[i]);
+		m_controlPortsSaved[i] =  *m_controlPorts[i];
+		if (++modifiedCount > 10) break;
 	    }
-    
-	    m_plugin->process(m_audioIns, m_audioOuts);
-
-	} catch (RemotePluginClosedException) {
-	    m_ok = false;
 	}
+	
+	m_plugin->process(m_audioIns, m_audioOuts);
+	
+    } catch (RemotePluginClosedException) {
+	m_ok = false;
     }
 }
 
@@ -352,6 +356,8 @@ void
 DSSIVSTPluginInstance::runSynth(unsigned long sampleCount,
 				snd_seq_event_t *events, unsigned long eventCount)
 {
+    if (!m_ok) return;
+
     try {
 	if (m_alsaDecoder) {
 

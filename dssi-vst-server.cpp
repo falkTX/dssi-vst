@@ -1053,6 +1053,7 @@ AudioThreadMain(LPVOID parameter)
     struct sched_param param;
     param.sched_priority = 1;
     HANDLE watchdogThreadHandle;
+
     int result = sched_setscheduler(0, SCHED_FIFO, &param);
 
     if (result < 0) {
