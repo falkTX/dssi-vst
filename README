@@ -7,8 +7,8 @@ effects and instruments with GUI support.
 
 Source files:
 
-* dssi-vst.cpp: DSSI plugin implementation (works OK mostly)
-* dssi-vst_gui.cpp: DSSI plugin GUI process implementation (not done yet)
+* dssi-vst.cpp: DSSI plugin implementation
+* dssi-vst_gui.cpp: DSSI plugin GUI process implementation
 * dssi-vst-scanner.cpp: Program that determines what VSTs you have (a bit
   like fstconfig in the fst package) and communicates it back to the plugin
 * dssi-vst-server.cpp: Program that hosts a single VST with a comms link
@@ -62,15 +62,20 @@ dssi-vst doesn't use libfst because libfst is just too serious a thing
 to start messing about with in a plugin whose host doesn't know about
 it (because it involves introducing Wine threads into the host).
 
-Architecturally dssi-vst is a little bit like vstserver in that it
-runs the plugin in a separate process and communicates with it via
-some IPC mechanism (here shared memory and POSIX FIFOs, where
-vstserver uses shared memory and Unix domain sockets).  The big
-difference is that dssi-vst spawns a separate process per plugin
-rather than using a single server.  To be honest, the only practical
-reason dssi-vst doesn't use vstserver is that I wrote most of this
-code quite a while ago as an exercise, and I've just got used to my
-own code.
+The main reason dssi-vst doesn't use vstserver is that I wrote most of
+this code quite a while ago as an exercise, and I've just got used to
+my own code.  Architecturally dssi-vst is like vstserver in that it
+runs the VST plugin in a separate process and communicates with it via
+some IPC mechanism (here shared memory and POSIX FIFOs, in vstserver
+shared memory and Unix domain sockets).  The big difference is that
+dssi-vst spawns a separate process per plugin rather than using a
+single server, so it's likely to use more resources.  A vstserver
+alternative (perhaps just a DSSI extension to vstserver's ladspavst)
+might be a better thing, and if you think so, I encourage you to make
+one.  The GUI part of dssi-vst should work with ladspavst or something
+based on it already, with a small adjustment to accommodate the fact
+that dssi-vst and ladspavst order their ports differently (dssi-vst
+has control ports first, ladspavst has audio ports first).
 
 These are some of the theoretical good points of dssi-vst's
 architecture:
@@ -90,7 +95,7 @@ architecture:
 * DSSI provides a closer match to the VST feature set than LADSPA
   does -- apart from the synth stuff, this plugin handles VST programs
   as well as parameters -- which makes it more useful than vstserver's
-  LADSPA wrapper plugin.
+  existing ladspavst plugin.
 
 * Obviously, dssi-vst allows any DSSI host to become a VST host
   without having to know anything about VST or to have a code (or
@@ -109,11 +114,11 @@ Bad points:
   or effect on a fast machine, not for doing all your effects work.
 
 * A plugin with a visible GUI actually has to be instantiated twice.
-  The GUI instantiation doesn't do the full audio processing work,
+  The GUI instantiation doesn't do real audio processing work,
   and it isn't created unless you actually want to see the GUI, but
   this is still wasteful of resources.
 
-* Any plugin GUI that uses its own back channel to communicate
+* Any VST GUI that uses its own back channel to communicate
   directly with the plugin will fail, because there's no way to
   intercept this information, which is necessary for the DSSI GUI
   separation model.  The most obvious example where this causes
@@ -122,16 +127,15 @@ Bad points:
   dssi-vst, although that doesn't usually prevent the plugin
   itself from working.  More complex plugins with complex GUIs
   that do patch management in the plugin GUI also suffer, though
-  they might be better run as standalone jack_fst or vstserver
-  applications plumbed into the JACK graph anyway.
+  they might be better run as standalone jack_fst applications
+  plumbed into the JACK graph anyway.
 
 * It's hard to make sure things like the communications FIFOs are
   tidied up when exiting.  Apart from anything else it requires
   that the host call cleanup() on its plugins when exiting from
-  ctrl-C or whatever.  This isn't quite handled satisfactorily yet
-  either in this code or in the existing hosts.  A vstserver model
-  can cope better with this by having the server take ownership
-  of such resources instead of the plugin.
+  ctrl-C or whatever.  The vstserver model can cope better with
+  this by having the server take ownership of such resources
+  instead of the DSSI plugin.
 
 * The comms model dssi-vst uses introduces a fixed latency equal to
   the JACK period size, as well as any existing latency in the VST
@@ -144,13 +148,14 @@ Licence
 -------
 
 My usual preference would be to offer dssi-vst under the GNU GPL.
-However, it is my personal belief that GPL'd code that makes use of
-the Steinberg VST SDK header files cannot be distributed without
-violating either the GPL or at least one of the copyright or licensing
-terms for the Steinberg header files.  So I am offering this code
-under the following terms:
+However, it is my personal opinion (and I am not a lawyer and have not
+consulted one) that GPL'd code that makes use of the Steinberg VST SDK
+header files, either directly or via a library, cannot be redistributed
+without violating either the GPL or at least one of the copyright or
+licensing terms for the Steinberg header files.  So I am offering this
+code under the following terms:
 
-You may distribute and/or modify dssi-vst under the terms of version 2
+"You may distribute and/or modify dssi-vst under the terms of version 2
 of the GNU General Public License as published by the Free Software
 Foundation, except that you are hereby permitted to omit the source
 code to the two VST SDK header files AEffect.h and aeffectx.h (the
@@ -158,8 +163,19 @@ source code of which would otherwise be required by section 3 of the
 GPL) when redistributing dssi-vst.  The full terms of the GPL continue
 to apply to all of the remaining source code for dssi-vst.
 
-Chris Cannam
-cannam@all-day-breakfast.com
+Chris Cannam, cannam@all-day-breakfast.com"
+
+What does this mean in practice?  The main thing is it means dssi-vst
+is not Free Software in the terms of e.g. the Debian Free Software
+Guidelines.  You can redistribute a compiled dssi-vst plugin legally
+so long as you follow the GPL's terms with respect to the source code
+for dssi-vst and liblo (see below), but you cannot redistribute the
+whole of the source code required to build dssi-vst.  Since dssi-vst
+exists solely to provide compatibility with proprietary code in the
+form of VST plugins, I don't see this as a great moral hardship.  If
+it troubles you, don't use proprietary plugins.
+
+You _can_ use dssi-vst as a plugin with a GPL'd DSSI host.
 
 
 Licence for liblo
@@ -169,7 +185,7 @@ dssi-vst makes use of the liblo library by Steve Harris, which is
 provided under the GPL.  Steve Harris has provided the following
 exemption to permit the liblo library to be used with dssi-vst:
 
-You are hereby permitted to omit the source code to the two VST SDK
+"You are hereby permitted to omit the source code to the two VST SDK
 header files AEffect.h and aeffectx.h (the source code of which would
 otherwise be required by section 3 of the GPL) when redistributing any
 version of dssi-vst which uses liblo.  This offer does not imply any
@@ -177,5 +193,5 @@ exemption to the GPL for the liblo code itself or the remainder of
 dssi-vst, nor to any other derived work that may use liblo.
 
 Steve Harris
-steve <at> plugin <dot> org <dot> uk
+steve <at> plugin <dot> org <dot> uk"
 
