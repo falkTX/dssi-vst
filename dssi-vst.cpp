@@ -152,7 +152,11 @@ DSSIVSTPluginInstance::DSSIVSTPluginInstance(std::string dllName,
 
 	m_controlPortCount = m_plugin->getParameterCount();
 	m_controlPorts = new LADSPA_Data*[m_controlPortCount];
-	m_controlPortsSaved = new LADSPA_Data[m_controlPortCount](NO_CONTROL_DATA);
+	m_controlPortsSaved = new LADSPA_Data[m_controlPortCount];
+
+	for (unsigned long i = 0; i < m_controlPortCount; ++i) {
+	    m_controlPortsSaved[i] = NO_CONTROL_DATA;
+	}
 	
 	m_audioInCount = m_plugin->getInputCount();
 	m_audioIns = new LADSPA_Data*[m_audioInCount];
