@@ -117,7 +117,7 @@ WinMain(HINSTANCE hInst, HINSTANCE hPrevInst, LPSTR cmdline, int cmdshow)
 {
     char *destFile = 0;
 
-    cout << "DSSI VST plugin scanner v0.2" << endl;
+    cout << "DSSI VST plugin scanner v0.3" << endl;
     cout << "Copyright (c) 2004 Chris Cannam - Fervent Software" << endl;
 
     if (cmdline && cmdline[0]) destFile = strdup(cmdline);

@@ -257,7 +257,7 @@ jackProcess(jack_nframes_t nframes, void *arg)
     pthread_mutex_lock(&pluginMutex);
 
     if (alsaDecoderIndex > 0) {
-	plugin->sendMIDIData(alsaDecoderBuffer, alsaDecoderIndex);
+	plugin->sendMIDIData(alsaDecoderBuffer, 0, alsaDecoderIndex);
 	alsaDecoderIndex = 0;
     }
     

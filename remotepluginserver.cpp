@@ -241,10 +241,12 @@ RemotePluginServer::dispatchProcess()
 
     } else if (opcode == RemotePluginSendMIDIData) {
 
-	int len = 0;
-	unsigned char *data = readMIDIData(m_processFd, len);
-	std::cerr << "server: sendMIDIData length " << len << std::endl;
-	sendMIDIData(data, len);
+	int events = 0;
+	int *frameoffsets = 0;
+	unsigned char *data = readMIDIData(m_processFd, &frameoffsets, events);
+	if (events && data && frameoffsets) {
+	    sendMIDIData(data, frameoffsets, events);
+	}
     }
 }
 

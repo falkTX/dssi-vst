@@ -19,7 +19,7 @@ extern void rdwr_writeInt(int fd, int i, const char *file, int line);
 extern int rdwr_readInt(int fd, const char *file, int line);
 extern void rdwr_writeFloat(int fd, float f, const char *file, int line);
 extern float rdwr_readFloat(int fd, const char *file, int line);
-extern unsigned char *rdwr_readMIDIData(int fd, int &len, const char *file, int line);
+extern unsigned char *rdwr_readMIDIData(int fd, int **frameoffsets, int &events, const char *file, int line);
 
 #define tryRead(a, b, c) rdwr_tryRead(a, b, c, __FILE__, __LINE__)
 #define tryWrite(a, b, c) rdwr_tryWrite(a, b, c, __FILE__, __LINE__)
@@ -30,6 +30,6 @@ extern unsigned char *rdwr_readMIDIData(int fd, int &len, const char *file, int 
 #define readInt(a) rdwr_readInt(a, __FILE__, __LINE__)
 #define writeFloat(a, b) rdwr_writeFloat(a, b, __FILE__, __LINE__)
 #define readFloat(a) rdwr_readFloat(a, __FILE__, __LINE__)
-#define readMIDIData(a, b) rdwr_readMIDIData(a, b, __FILE__, __LINE__)
+#define readMIDIData(a, b, c) rdwr_readMIDIData(a, b, c, __FILE__, __LINE__)
 
 #endif

@@ -43,7 +43,8 @@ public:
 
     virtual bool         hasMIDIInput()                       { return false; }
     virtual void         sendMIDIData(unsigned char *data,
-				      int length)             { return; }
+				      int *frameOffsets,
+				      int events)             { return; }
 
     virtual void         process(float **inputs, float **outputs) = 0;
 

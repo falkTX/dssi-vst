@@ -382,12 +382,20 @@ RemotePluginClient::setCurrentProgram(int n)
 }
 
 void
-RemotePluginClient::sendMIDIData(unsigned char *data, int length)
+RemotePluginClient::sendMIDIData(unsigned char *data, int *frameoffsets, int events)
 {
-    std::cerr << "client: sendMIDIData length " << length << std::endl;
     writeOpcode(m_processFd, RemotePluginSendMIDIData);
-    writeInt(m_processFd, length);
-    tryWrite(m_processFd, data, length);
+    writeInt(m_processFd, events);
+    tryWrite(m_processFd, data, events * 3);
+
+    if (!frameoffsets) {
+	// This should not happen with a good client, but we'd better
+	// cope as well as possible with the lazy ol' degenerates
+	frameoffsets = (int *)alloca(events * sizeof(int));
+	memset(frameoffsets, 0, events * sizeof(int));
+    }
+
+    tryWrite(m_processFd, frameoffsets, events * sizeof(int));
 }
 
 void

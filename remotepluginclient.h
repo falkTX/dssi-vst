@@ -48,7 +48,9 @@ public:
     void         setCurrentProgram(int);
 
     bool         hasMIDIInput();
-    void         sendMIDIData(unsigned char *data, int length);
+
+    // Must be three bytes per event
+    void         sendMIDIData(unsigned char *data, int *frameoffsets, int events);
 
     // Either inputs or outputs may be NULL if (and only if) there are none
     void         process(float **inputs, float **outputs);

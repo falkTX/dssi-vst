@@ -19,7 +19,8 @@
 #include <string>
 #include <iostream>
 
-#define MIDI_BUFFER_SIZE 1024
+// Should be divisible by three
+#define MIDI_BUFFER_SIZE 1023
 
 class DSSIVSTPluginInstance
 {
@@ -68,6 +69,7 @@ protected:
     unsigned long              m_programCount;
 
     unsigned char              m_decodeBuffer[MIDI_BUFFER_SIZE];
+    int                        m_frameOffsetsBuffer[MIDI_BUFFER_SIZE / 3];
     snd_midi_event_t          *m_alsaDecoder;
 
     bool m_pendingProgram;
@@ -332,12 +334,17 @@ DSSIVSTPluginInstance::runSynth(unsigned long sampleCount,
 	if (m_alsaDecoder) {
 
 	    unsigned long index = 0;
+	    unsigned long i;
 	    
-	    for (unsigned long i = 0; i < eventCount; ++i) {
+	    for (i = 0; i < eventCount; ++i) {
 		
 		snd_seq_event_t *ev = &events[i];
-		
+
 		if (index >= MIDI_BUFFER_SIZE - 4) break;
+
+		std::cout << "DSSIVSTPluginInstance::runSynth: event at offset " << ev->time.tick << std::endl;
+
+		m_frameOffsetsBuffer[i] = ev->time.tick;
 		
 		long count = snd_midi_event_decode(m_alsaDecoder,
 						   m_decodeBuffer + index,
@@ -358,7 +365,7 @@ DSSIVSTPluginInstance::runSynth(unsigned long sampleCount,
 	    }
 	    
 	    if (index > 0) {
-		m_plugin->sendMIDIData(m_decodeBuffer, index);
+		m_plugin->sendMIDIData(m_decodeBuffer, m_frameOffsetsBuffer, i);
 	    }
 	}
     } catch (RemotePluginClosedException) {

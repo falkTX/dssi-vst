@@ -92,6 +92,41 @@ RemoteVSTClient::~RemoteVSTClient()
 void
 RemoteVSTClient::queryPlugins(std::vector<PluginRecord> &plugins)
 {
+    // First check whether there are any DLLs in the same VST path as
+    // the scanner uses.  If not, we know immediately there are no
+    // plugins and we don't need to run the (Wine-based) scanner.
+    
+    std::vector<std::string> vstPath = Paths::getPath
+	("VST_PATH", "/usr/local/lib/vst:/usr/lib/vst", "/vst");
+
+    bool haveDll = false;
+
+    for (size_t i = 0; i < vstPath.size(); ++i) {
+	
+	std::string vstDir = vstPath[i];
+	DIR *directory = opendir(vstDir.c_str());
+	if (!directory) continue;
+	struct dirent *entry;
+
+	while ((entry = readdir(directory))) {
+	    
+	    std::string libname = entry->d_name;
+
+	    if (libname[0] != '.' &&
+		libname.length() >= 5 &&
+		(libname.substr(libname.length() - 4) == ".dll" ||
+		 libname.substr(libname.length() - 4) == ".DLL")) {
+		haveDll = true;
+		break;
+	    }
+	}
+
+	closedir(directory);
+	if (haveDll) break;
+    }
+
+    if (!haveDll) return;
+
     char fifoFile[60];
 
     sprintf(fifoFile, "/tmp/rplugin_qry_XXXXXX");

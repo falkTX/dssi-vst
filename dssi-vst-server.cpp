@@ -76,7 +76,9 @@ public:
     virtual void         setCurrentProgram(int);
 
     virtual bool         hasMIDIInput() { return m_hasMIDI; }
-    virtual void         sendMIDIData(unsigned char *data, int length);
+    virtual void         sendMIDIData(unsigned char *data,
+				      int *frameOffsets,
+				      int events);
 
     virtual void process(float **inputs, float **outputs) {
 	inProcessThread = true;
@@ -260,10 +262,8 @@ RemoteVSTServer::setCurrentProgram(int p)
 }
 
 void
-RemoteVSTServer::sendMIDIData(unsigned char *data, int len)
+RemoteVSTServer::sendMIDIData(unsigned char *data, int *frameOffsets, int events)
 {
-    std::cerr << "host: sendMIDIData length " << len << std::endl;
-
 #define MIDI_EVENT_BUFFER_COUNT 1024
     static VstMidiEvent vme[MIDI_EVENT_BUFFER_COUNT];
     static char evbuf[sizeof(VstMidiEvent *) * MIDI_EVENT_BUFFER_COUNT +
@@ -273,20 +273,19 @@ RemoteVSTServer::sendMIDIData(unsigned char *data, int len)
     vstev->reserved = 0;
 
     int ix = 0;
-    int count = len/3;
 
-    if (count > MIDI_EVENT_BUFFER_COUNT) {
-	std::cerr << "vstserv: WARNING: " << count << " MIDI events received "
+    if (events > MIDI_EVENT_BUFFER_COUNT) {
+	std::cerr << "vstserv: WARNING: " << events << " MIDI events received "
 		  << "for " << MIDI_EVENT_BUFFER_COUNT << "-event buffer"
 		  << std::endl;
-	count = MIDI_EVENT_BUFFER_COUNT;
+	events = MIDI_EVENT_BUFFER_COUNT;
     }
 
-    while (ix < count) {
+    while (ix < events) {
 
 	vme[ix].type = kVstMidiType;
 	vme[ix].byteSize = 24;
-	vme[ix].deltaFrames = 0;
+	vme[ix].deltaFrames = (frameOffsets ? frameOffsets[ix] : 0);
 	vme[ix].flags = 0;
 	vme[ix].noteLength = 0;
 	vme[ix].noteOffset = 0;
@@ -311,7 +310,7 @@ RemoteVSTServer::sendMIDIData(unsigned char *data, int len)
 	++ix;
     }
 
-    vstev->numEvents = count;
+    vstev->numEvents = events;
     if (!m_plugin->dispatcher(m_plugin, effProcessEvents, 0, 0, vstev, 0)) {
 	cerr << "WARNING: " << ix << " MIDI event(s) rejected by plugin" << endl;
     }
