@@ -32,9 +32,7 @@ To build dssi-vst, you will need:
   onwards is probably OK) -- http://www.winehq.com/
 
 * Steve Harris's liblo "Lite OSC" library -- http://liblo.sf.net/.
-  You will need version 0.6 or newer, but unfortunately versions 0.6-0.8
-  contain a serious bug that prevents DSSI GUI startup from working.  So
-  look out for 0.9 (not actually released at the time of writing!)
+  You will need version 0.9 or newer.
 
 * The VST SDK headers -- http://www.steinberg.net/steinberg/ygrabit/index.html
   These are free but not redistributable.
