@@ -8,6 +8,7 @@
 #include "rdwrops.h"
 
 #include <errno.h>
+#include <unistd.h>
 
 
 extern void

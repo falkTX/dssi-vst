@@ -13,6 +13,7 @@
 #include <fcntl.h>
 #include <iostream>
 #include <dirent.h>
+#include <unistd.h>
 
 #include "rdwrops.h"
 #include "paths.h"

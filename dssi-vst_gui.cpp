@@ -14,6 +14,7 @@
 #include <sys/socket.h>
 #include <fcntl.h>
 #include <sys/un.h>
+#include <unistd.h>
 
 #include <lo/lo.h>
 #include <lo/lo_lowlevel.h>

@@ -424,9 +424,9 @@ LIBS="$WINE_LIBRARY_PATH $LIBS"
 AC_CHECK_LIB(wine_unicode,wine_cp_wcstombs,[],[
     AC_MSG_ERROR([Could not find the Wine dlls (libwine_unicode.so)])
 ])
-AC_CHECK_LIB(wine_uuid,IID_IUnknown,[],[
-    AC_MSG_ERROR([Could not find the Wine dlls (libwine_uuid.so)])
-])
+#AC_CHECK_LIB(wine_uuid,IID_IUnknown,[],[
+#    AC_MSG_ERROR([Could not find the Wine dlls (libwine_uuid.so)])
+#])
 
 LIBS="$save_LIBS"
 

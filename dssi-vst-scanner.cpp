@@ -15,6 +15,7 @@
 #include <fcntl.h>
 #include <sys/un.h>
 #include <dirent.h>
+#include <unistd.h>
 
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>

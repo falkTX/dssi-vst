@@ -13,6 +13,7 @@
 #include <sys/stat.h>
 #include <sys/poll.h>
 #include <fcntl.h>
+#include <unistd.h>
 
 #include <time.h>
 #include <iostream>

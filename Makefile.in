@@ -22,7 +22,7 @@ EXES                  = dssi-vst-server.exe dssi-vst-scanner.exe dssi-vst_gui.ex
 DEFINES               =
 DLL_PATH              =
 LIBRARY_PATH          = -L.
-LIBRARIES             = remoteplugin
+LIBRARIES             = remoteplugin asound
 
 
 ### dssi-vst-server.exe sources and settings
@@ -202,4 +202,4 @@ dssi-vst_gui.o:	remoteplugin.h remotepluginserver.h libremoteplugin.a
 dssi-vst-scanner.o:	remoteplugin.h remotepluginserver.h libremoteplugin.a
 
 dssi-vst.so:	remoteplugin.h remotepluginclient.h libremoteplugin.a dssi-vst.cpp remotevstclient.o
-	g++ -shared -Wl,-Bsymbolic -g3 -Wall -o dssi-vst.so dssi-vst.cpp remotevstclient.o  -L. -lremoteplugin
+	g++ -shared -Wl,-Bsymbolic -g3 -Wall -o dssi-vst.so dssi-vst.cpp remotevstclient.o  -L. -lremoteplugin -lasound
