@@ -280,6 +280,13 @@ RemotePluginServer::dispatchProcessEvents()
 //	std::cerr << "server process: written" << std::endl;
 	break;
     }
+	
+    case RemotePluginSetParameter:
+    {
+	int pn(readInt(m_processFd));
+	setParameter(pn, readFloat(m_processFd));
+	break;
+    }
 
     case RemotePluginSetCurrentProgram:
 	setCurrentProgram(readInt(m_processFd));
@@ -330,13 +337,6 @@ RemotePluginServer::dispatchControlEvents()
 
     switch (opcode) {
 
-    case RemotePluginProcess:
-    case RemotePluginSetCurrentProgram:
-    case RemotePluginSendMIDIData:
-	std::cerr << "WARNING: RemotePluginServer: got opcode " << opcode
-		  << " from control fd, should be a process fd opcode" << std::endl;
-	break;
-
     case RemotePluginGetVersion:
 	writeFloat(m_controlResponseFd, getVersion());
 	break;
@@ -370,13 +370,6 @@ RemotePluginServer::dispatchControlEvents()
     case RemotePluginGetParameterName:
 	writeString(m_controlResponseFd, getParameterName(readInt(m_controlRequestFd)));
 	break;
-	
-    case RemotePluginSetParameter:
-    {
-	int pn(readInt(m_controlRequestFd));
-	setParameter(pn, readFloat(m_controlRequestFd));
-	break;
-    }
     
     case RemotePluginGetParameter:
 	writeFloat(m_controlResponseFd, getParameter(readInt(m_controlRequestFd)));

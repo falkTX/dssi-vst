@@ -332,8 +332,8 @@ DSSIVSTPluginInstance::run(unsigned long sampleCount)
 		if (!m_controlPorts[i]) continue;
 
 		if (m_controlPortsSaved[i] != *m_controlPorts[i]) {
-		    std::cout << "Sending new value " << *m_controlPorts[i]
-			      << " for control port " << i << std::endl;
+//		    std::cout << "Sending new value " << *m_controlPorts[i]
+//			      << " for control port " << i << std::endl;
 		    m_plugin->setParameter(i, *m_controlPorts[i]);
 		    m_controlPortsSaved[i] =  *m_controlPorts[i];
 		    if (++modifiedCount > 10) break;

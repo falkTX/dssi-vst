@@ -331,9 +331,9 @@ RemotePluginClient::getParameterName(int p)
 void
 RemotePluginClient::setParameter(int p, float v)
 {
-    writeOpcode(m_controlRequestFd, RemotePluginSetParameter);
-    writeInt(m_controlRequestFd, p);
-    writeFloat(m_controlRequestFd, v);
+    writeOpcode(m_processFd, RemotePluginSetParameter);
+    writeInt(m_processFd, p);
+    writeFloat(m_processFd, v);
 }
 
 float
