@@ -131,6 +131,12 @@ alsaSeqCallback(snd_seq_t *alsaSeqHandle)
 
 	if (snd_seq_event_input(alsaSeqHandle, &ev) > 0) {
 
+	    if (ev->type >= SND_SEQ_EVENT_ECHO) {
+		fprintf(stderr, "Ignoring incoming sequencer event of type %d\n",
+			ev->type);
+		continue;
+	    }
+
 	    if (midiReadIndex == midiWriteIndex + 1) {
 		fprintf(stderr, "WARNING: MIDI stream buffer overflow\n");
 		continue;

@@ -46,6 +46,7 @@ static int bufferSize = 0;
 static int sampleRate = 0;
 
 static RemotePluginDebugLevel debugLevel = RemotePluginDebugSetup;
+static pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
 
 using namespace std;
 
@@ -83,11 +84,22 @@ public:
 				      int events);
 
     virtual void process(float **inputs, float **outputs) {
+	if (pthread_mutex_trylock(&mutex)) {
+	    for (int i = 0; i < m_plugin->numOutputs; ++i) {
+		memset(outputs[i], 0, bufferSize * sizeof(float));
+	    }
+	    currentSamplePosition += bufferSize;
+	    return;
+	}
+
 	inProcessThread = true;
+
 	// superclass guarantees setBufferSize will be called before this
 	m_plugin->processReplacing(m_plugin, inputs, outputs, bufferSize);
 	currentSamplePosition += bufferSize;
+
 	inProcessThread = false;
+	pthread_mutex_unlock(&mutex);
     }
 
     virtual void setDebugLevel(RemotePluginDebugLevel level) {
@@ -113,6 +125,12 @@ RemoteVSTServer::RemoteVSTServer(std::string fileIdentifiers,
     m_name(fallbackName),
     m_maker("")
 {
+    pthread_mutex_lock(&mutex);
+
+    if (debugLevel > 0) {
+	cerr << "dssi-vst-server[1]: opening plugin" << endl;
+    }
+
     m_plugin->dispatcher(m_plugin, effOpen, 0, 0, NULL, 0);
     m_plugin->dispatcher(m_plugin, effMainsChanged, 0, 0, NULL, 0);
 
@@ -167,17 +185,25 @@ RemoteVSTServer::RemoteVSTServer(std::string fileIdentifiers,
     for (int i = 0; i < m_plugin->numParams; ++i) {
 	m_defaults[i] = m_plugin->getParameter(m_plugin, i);
     }
+
+    pthread_mutex_unlock(&mutex);
 }
 
 RemoteVSTServer::~RemoteVSTServer()
 {
+    pthread_mutex_lock(&mutex);
+
     m_plugin->dispatcher(m_plugin, effClose, 0, 0, NULL, 0);
     delete[] m_defaults;
+
+    pthread_mutex_unlock(&mutex);
 }
 
 void
 RemoteVSTServer::setBufferSize(int sz)
 {
+    pthread_mutex_lock(&mutex);
+
     m_plugin->dispatcher(m_plugin, effMainsChanged, 0, 0, NULL, 0);
     m_plugin->dispatcher(m_plugin, effSetBlockSize, 0, sz, NULL, 0);
     m_plugin->dispatcher(m_plugin, effMainsChanged, 0, 1, NULL, 0);
@@ -187,11 +213,15 @@ RemoteVSTServer::setBufferSize(int sz)
     if (debugLevel > 0) {
 	cerr << "dssi-vst-server[1]: set buffer size to " << sz << endl;
     }
+
+    pthread_mutex_unlock(&mutex);
 }
 
 void
 RemoteVSTServer::setSampleRate(int sr)
 {
+    pthread_mutex_lock(&mutex);
+
     m_plugin->dispatcher(m_plugin, effMainsChanged, 0, 0, NULL, 0);
     m_plugin->dispatcher(m_plugin, effSetSampleRate, 0, 0, NULL, (float)sr);
     m_plugin->dispatcher(m_plugin, effMainsChanged, 0, 1, NULL, 0);
@@ -201,13 +231,19 @@ RemoteVSTServer::setSampleRate(int sr)
     if (debugLevel > 0) {
 	cerr << "dssi-vst-server[1]: set sample rate to " << sr << endl;
     }
+
+    pthread_mutex_unlock(&mutex);
 }
 
 void
 RemoteVSTServer::reset()
 {
+    pthread_mutex_lock(&mutex);
+
     m_plugin->dispatcher(m_plugin, effMainsChanged, 0, 0, NULL, 0);
     m_plugin->dispatcher(m_plugin, effMainsChanged, 0, 1, NULL, 0);
+
+    pthread_mutex_unlock(&mutex);
 }
 
 void
@@ -245,6 +281,8 @@ RemoteVSTServer::getParameterDefault(int p)
 std::string
 RemoteVSTServer::getProgramName(int p)
 {
+    pthread_mutex_lock(&mutex);
+
     char name[24];
     // effGetProgramName appears to return the name of the current
     // program, not program <index> -- though we pass in <index> as
@@ -254,13 +292,19 @@ RemoteVSTServer::getProgramName(int p)
     m_plugin->dispatcher(m_plugin, effSetProgram, 0, p, NULL, 0);
     m_plugin->dispatcher(m_plugin, effGetProgramName, p, 0, name, 0);
     m_plugin->dispatcher(m_plugin, effSetProgram, 0, prevProgram, NULL, 0);
+
+    pthread_mutex_unlock(&mutex);
     return name;
 }
 
 void
 RemoteVSTServer::setCurrentProgram(int p)
 {
+    pthread_mutex_lock(&mutex);
+
     m_plugin->dispatcher(m_plugin, effSetProgram, 0, p, 0, 0);
+
+    pthread_mutex_unlock(&mutex);
 }
 
 void
@@ -312,10 +356,14 @@ RemoteVSTServer::sendMIDIData(unsigned char *data, int *frameOffsets, int events
 	++ix;
     }
 
+    pthread_mutex_lock(&mutex);
+
     vstev->numEvents = events;
     if (!m_plugin->dispatcher(m_plugin, effProcessEvents, 0, 0, vstev, 0)) {
 	cerr << "WARNING: " << ix << " MIDI event(s) rejected by plugin" << endl;
     }
+
+    pthread_mutex_unlock(&mutex);
 }
 
 bool
@@ -334,45 +382,38 @@ hostCallback(AEffect *plugin, long opcode, long index,
 
     switch (opcode) {
 
+    case audioMasterAutomate:
+	if (debugLevel > 1)
+	    cerr << "dssi-vst-server[2]: audioMasterAutomate requested" << endl;
+	break;
+
     case audioMasterVersion:
 	if (debugLevel > 1)
 	    cerr << "dssi-vst-server[2]: audioMasterVersion requested" << endl;
 	return 2300;
 
-    case audioMasterGetVendorString:
+    case audioMasterCurrentId:
 	if (debugLevel > 1)
-	    cerr << "dssi-vst-server[2]: audioMasterGetVendorString requested" << endl;
-	strcpy((char *)ptr, "Fervent Software");
+	    cerr << "dssi-vst-server[2]: audioMasterCurrentId requested" << endl;
+	return 0;
+
+    case audioMasterIdle:
+	if (debugLevel > 1)
+	    cerr << "dssi-vst-server[2]: audioMasterIdle requested" << endl;
+	plugin->dispatcher(plugin, effEditIdle, 0, 0, 0, 0);
 	break;
 
-    case audioMasterGetProductString:
+    case audioMasterPinConnected:
 	if (debugLevel > 1)
-	    cerr << "dssi-vst-server[2]: audioMasterGetProductString requested" << endl;
-	strcpy((char *)ptr, "DSSI VST Wrapper Plugin");
+	    cerr << "dssi-vst-server[2]: audioMasterPinConnected requested" << endl;
 	break;
 
-    case audioMasterGetVendorVersion:
-	if (debugLevel > 1)
-	    cerr << "dssi-vst-server[2]: audioMasterGetVendorVersion requested" << endl;
-	return long(RemotePluginVersion * 100);
-
-    case audioMasterGetLanguage:
-	if (debugLevel > 1)
-	    cerr << "dssi-vst-server[2]: audioMasterGetLanguage requested" << endl;
-	return kVstLangEnglish;
-
-    case audioMasterCanDo:
-	if (debugLevel > 1)
-	    cerr << "dssi-vst-server[2]: audioMasterCanDo(" << (char *)ptr
-		 << ") requested" << endl;
-	if (!strcmp((char*)ptr, "sendVstEvents") ||
-	    !strcmp((char*)ptr, "sendVstMidiEvent") ||
-	    !strcmp((char*)ptr, "sendVstTimeInfo") ||
-	    !strcmp((char*)ptr, "sizeWindow") ||
-	    !strcmp((char*)ptr, "supplyIdle")) {
-	    return 1;
+    case audioMasterWantMidi:
+	if (debugLevel > 1) {
+	    cerr << "dssi-vst-server[2]: audioMasterWantMidi requested" << endl;
 	}
-	break;
+	// happy to oblige
+	return 1;
 
     case audioMasterGetTime:
 	if (debugLevel > 1)
@@ -382,11 +423,57 @@ hostCallback(AEffect *plugin, long opcode, long index,
 	timeInfo.flags = 0; // don't mark anything valid except default samplePos/Rate
 	return (long)&timeInfo;
 
+    case audioMasterProcessEvents:
+	if (debugLevel > 1)
+	    cerr << "dssi-vst-server[2]: audioMasterProcessEvents requested" << endl;
+	break;
+
+    case audioMasterSetTime:
+	if (debugLevel > 1)
+	    cerr << "dssi-vst-server[2]: audioMasterSetTime requested" << endl;
+	break;
+
     case audioMasterTempoAt:
 	if (debugLevel > 1)
 	    cerr << "dssi-vst-server[2]: audioMasterTempoAt requested" << endl;
 	// can't support this, return 120bpm
 	return 120 * 10000;
+
+    case audioMasterGetNumAutomatableParameters:
+	if (debugLevel > 1)
+	    cerr << "dssi-vst-server[2]: audioMasterGetNumAutomatableParameters requested" << endl;
+	return 5000;
+
+    case audioMasterGetParameterQuantization :
+	if (debugLevel > 1)
+	    cerr << "dssi-vst-server[2]: audioMasterGetParameterQuantization requested" << endl;
+	return 1;
+
+    case audioMasterIOChanged:
+	if (debugLevel > 1)
+	    cerr << "dssi-vst-server[2]: audioMasterIOChanged requested" << endl;
+	cerr << "WARNING: Plugin inputs and/or outputs changed: NOT SUPPORTED" << endl;
+	break;
+
+    case audioMasterNeedIdle:
+	if (debugLevel > 1) {
+	    cerr << "dssi-vst-server[2]: audioMasterNeedIdle requested" << endl;
+	}
+	// might be nice to handle this better
+	return 1;
+
+    case audioMasterSizeWindow:
+	if (debugLevel > 1) {
+	    cerr << "dssi-vst-server[2]: audioMasterSizeWindow requested" << endl;
+	}
+	if (hWnd) {
+	    SetWindowPos(hWnd, 0, 0, 0,
+			 index + 6,
+			 value + 25,
+			 SWP_NOACTIVATE | SWP_NOMOVE |
+			 SWP_NOOWNERZORDER | SWP_NOZORDER);
+	}
+	return 1;
 
     case audioMasterGetSampleRate:
 	if (debugLevel > 1)
@@ -408,6 +495,26 @@ hostCallback(AEffect *plugin, long opcode, long index,
 			   0, bufferSize, NULL, 0);
 	break;
 
+    case audioMasterGetInputLatency:
+	if (debugLevel > 1)
+	    cerr << "dssi-vst-server[2]: audioMasterGetInputLatency requested" << endl;
+	break;
+
+    case audioMasterGetOutputLatency:
+	if (debugLevel > 1)
+	    cerr << "dssi-vst-server[2]: audioMasterGetOutputLatency requested" << endl;
+	break;
+
+    case audioMasterGetPreviousPlug:
+	if (debugLevel > 1)
+	    cerr << "dssi-vst-server[2]: audioMasterGetPreviousPlug requested" << endl;
+	break;
+
+    case audioMasterGetNextPlug:
+	if (debugLevel > 1)
+	    cerr << "dssi-vst-server[2]: audioMasterGetNextPlug requested" << endl;
+	break;
+
     case audioMasterWillReplaceOrAccumulate:
 	if (debugLevel > 1)
 	    cerr << "dssi-vst-server[2]: audioMasterWillReplaceOrAccumulate requested" << endl;
@@ -422,38 +529,145 @@ hostCallback(AEffect *plugin, long opcode, long index,
 	if (inProcessThread) return 2;
 	else return 1;
 
-    case audioMasterGetParameterQuantization:
-	if (debugLevel > 1) {
-	    cerr << "dssi-vst-server[2]: audioMasterGetParameterQuantization requested" << endl;
-	}
-	return 1;
+    case audioMasterGetAutomationState:
+	if (debugLevel > 1)
+	    cerr << "dssi-vst-server[2]: audioMasterGetAutomationState requested" << endl;
+	return 4; // read/write
 
-    case audioMasterNeedIdle:
-	if (debugLevel > 1) {
-	    cerr << "dssi-vst-server[2]: audioMasterNeedIdle requested" << endl;
-	}
-	// might be nice to handle this better
-	return 1;
+    case audioMasterOfflineStart:
+	if (debugLevel > 1)
+	    cerr << "dssi-vst-server[2]: audioMasterOfflineStart requested" << endl;
+	break;
 
-    case audioMasterWantMidi:
-	if (debugLevel > 1) {
-	    cerr << "dssi-vst-server[2]: audioMasterWantMidi requested" << endl;
-	}
-	// happy to oblige
-	return 1;
+    case audioMasterOfflineRead:
+	if (debugLevel > 1)
+	    cerr << "dssi-vst-server[2]: audioMasterOfflineRead requested" << endl;
+	break;
 
-    case audioMasterSizeWindow:
-	if (debugLevel > 1) {
-	    cerr << "dssi-vst-server[2]: audioMasterSizeWindow requested" << endl;
+    case audioMasterOfflineWrite:
+	if (debugLevel > 1)
+	    cerr << "dssi-vst-server[2]: audioMasterOfflineWrite requested" << endl;
+	break;
+
+    case audioMasterOfflineGetCurrentPass:
+	if (debugLevel > 1)
+	    cerr << "dssi-vst-server[2]: audioMasterOfflineGetCurrentPass requested" << endl;
+	break;
+
+    case audioMasterOfflineGetCurrentMetaPass:
+	if (debugLevel > 1)
+	    cerr << "dssi-vst-server[2]: audioMasterOfflineGetCurrentMetaPass requested" << endl;
+	break;
+
+    case audioMasterSetOutputSampleRate:
+	if (debugLevel > 1)
+	    cerr << "dssi-vst-server[2]: audioMasterSetOutputSampleRate requested" << endl;
+	break;
+
+    case audioMasterGetSpeakerArrangement:
+	if (debugLevel > 1)
+	    cerr << "dssi-vst-server[2]: audioMasterGetSpeakerArrangement requested" << endl;
+	break;
+
+    case audioMasterGetVendorString:
+	if (debugLevel > 1)
+	    cerr << "dssi-vst-server[2]: audioMasterGetVendorString requested" << endl;
+	strcpy((char *)ptr, "Fervent Software");
+	break;
+
+    case audioMasterGetProductString:
+	if (debugLevel > 1)
+	    cerr << "dssi-vst-server[2]: audioMasterGetProductString requested" << endl;
+	strcpy((char *)ptr, "DSSI VST Wrapper Plugin");
+	break;
+
+    case audioMasterGetVendorVersion:
+	if (debugLevel > 1)
+	    cerr << "dssi-vst-server[2]: audioMasterGetVendorVersion requested" << endl;
+	return long(RemotePluginVersion * 100);
+
+    case audioMasterVendorSpecific:
+	if (debugLevel > 1)
+	    cerr << "dssi-vst-server[2]: audioMasterVendorSpecific requested" << endl;
+	break;
+
+    case audioMasterSetIcon:
+	if (debugLevel > 1)
+	    cerr << "dssi-vst-server[2]: audioMasterSetIcon requested" << endl;
+	break;
+
+    case audioMasterCanDo:
+	if (debugLevel > 1)
+	    cerr << "dssi-vst-server[2]: audioMasterCanDo(" << (char *)ptr
+		 << ") requested" << endl;
+	if (!strcmp((char*)ptr, "sendVstEvents") ||
+	    !strcmp((char*)ptr, "sendVstMidiEvent") ||
+	    !strcmp((char*)ptr, "sendVstTimeInfo") ||
+	    !strcmp((char*)ptr, "sizeWindow") /* ||
+	    !strcmp((char*)ptr, "supplyIdle") */) {
+	    return 1;
 	}
-	if (hWnd) {
-	    SetWindowPos(hWnd, 0, 0, 0,
-			 index + 6,
-			 value + 25,
-			 SWP_NOACTIVATE | SWP_NOMOVE |
-			 SWP_NOOWNERZORDER | SWP_NOZORDER);
-	}
-	return 1;
+	break;
+
+    case audioMasterGetLanguage:
+	if (debugLevel > 1)
+	    cerr << "dssi-vst-server[2]: audioMasterGetLanguage requested" << endl;
+	return kVstLangEnglish;
+
+    case audioMasterOpenWindow:
+	if (debugLevel > 1)
+	    cerr << "dssi-vst-server[2]: audioMasterOpenWindow requested" << endl;
+	break;
+
+    case audioMasterCloseWindow:
+	if (debugLevel > 1)
+	    cerr << "dssi-vst-server[2]: audioMasterCloseWindow requested" << endl;
+	break;
+
+    case audioMasterGetDirectory:
+	if (debugLevel > 1)
+	    cerr << "dssi-vst-server[2]: audioMasterGetDirectory requested" << endl;
+	break;
+
+    case audioMasterUpdateDisplay:
+	if (debugLevel > 1)
+	    cerr << "dssi-vst-server[2]: audioMasterUpdateDisplay requested" << endl;
+	break;
+
+    case audioMasterBeginEdit:
+	if (debugLevel > 1)
+	    cerr << "dssi-vst-server[2]: audioMasterBeginEdit requested" << endl;
+	break;
+
+    case audioMasterEndEdit:
+	if (debugLevel > 1)
+	    cerr << "dssi-vst-server[2]: audioMasterEndEdit requested" << endl;
+	break;
+
+    case audioMasterOpenFileSelector:
+	if (debugLevel > 1)
+	    cerr << "dssi-vst-server[2]: audioMasterOpenFileSelector requested" << endl;
+	break;
+
+    case audioMasterCloseFileSelector:
+	if (debugLevel > 1)
+	    cerr << "dssi-vst-server[2]: audioMasterCloseFileSelector requested" << endl;
+	break;
+
+    case audioMasterEditFile:
+	if (debugLevel > 1)
+	    cerr << "dssi-vst-server[2]: audioMasterEditFile requested" << endl;
+	break;
+
+    case audioMasterGetChunkFile:
+	if (debugLevel > 1)
+	    cerr << "dssi-vst-server[2]: audioMasterGetChunkFile requested" << endl;
+	break;
+
+    case audioMasterGetInputSpeakerArrangement:
+	if (debugLevel > 1)
+	    cerr << "dssi-vst-server[2]: audioMasterGetInputSpeakerArrangement requested" << endl;
+	break;
 
     default:
 	if (debugLevel > 0) {
@@ -468,13 +682,9 @@ hostCallback(AEffect *plugin, long opcode, long index,
 DWORD WINAPI
 AudioThreadMain(LPVOID parameter)
 {
-    int policy = SCHED_FIFO;
     struct sched_param param;
-
     param.sched_priority = 1;
-
-    int result = sched_setscheduler(0, policy, &param);
-
+    int result = sched_setscheduler(0, SCHED_FIFO, &param);
     if (result < 0) {
 	perror("Failed to set realtime priority for audio thread");
     }
@@ -490,7 +700,11 @@ AudioThreadMain(LPVOID parameter)
 	    exiting = true;
 	}
 
-	if (exiting) return 0;
+	if (exiting) {
+	    param.sched_priority = 0;
+	    (void)sched_setscheduler(0, SCHED_OTHER, &param);
+	    return 0;
+	}
     }
 }
 
