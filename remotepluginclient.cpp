@@ -269,21 +269,21 @@ RemotePluginClient::setBufferSize(int s)
     if (s == m_bufferSize) return;
     m_bufferSize = s;
     sizeShm();
-    writeOpcode(m_controlRequestFd, RemotePluginSetBufferSize);
-    writeInt(m_controlRequestFd, s);
+    writeOpcode(m_processFd, RemotePluginSetBufferSize);
+    writeInt(m_processFd, s);
 }
 
 void
 RemotePluginClient::setSampleRate(int s)
 {
-    writeOpcode(m_controlRequestFd, RemotePluginSetSampleRate);
-    writeInt(m_controlRequestFd, s);
+    writeOpcode(m_processFd, RemotePluginSetSampleRate);
+    writeInt(m_processFd, s);
 }
 
 void
 RemotePluginClient::reset()
 {
-    writeOpcode(m_controlRequestFd, RemotePluginReset);
+    writeOpcode(m_processFd, RemotePluginReset);
     if (m_shmSize > 0) {
 	memset(m_shm, 0, m_shmSize);
     }

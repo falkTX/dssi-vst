@@ -240,8 +240,10 @@ RemotePluginServer::dispatchProcessEvents()
 
 //    std::cerr << "read opcode: " << opcode << std::endl;
 
-    if (opcode == RemotePluginProcess) {
+    switch (opcode) {
 
+    case RemotePluginProcess:
+    {
 	if (m_bufferSize < 0) {
 	    std::cerr << "ERROR: RemotePluginServer: buffer size must be set before process" << std::endl;
 	    return;
@@ -276,13 +278,15 @@ RemotePluginServer::dispatchProcessEvents()
 	process(m_inputs, m_outputs);
 
 //	std::cerr << "server process: written" << std::endl;
+	break;
+    }
 
-    } else if (opcode == RemotePluginSetCurrentProgram) {
-
+    case RemotePluginSetCurrentProgram:
 	setCurrentProgram(readInt(m_processFd));
+	break;
 
-    } else if (opcode == RemotePluginSendMIDIData) {
-
+    case RemotePluginSendMIDIData:
+    {
 	int events = 0;
 	int *frameoffsets = 0;
 	unsigned char *data = readMIDIData(m_processFd, &frameoffsets, events);
@@ -291,6 +295,28 @@ RemotePluginServer::dispatchProcessEvents()
 
 	    sendMIDIData(data, frameoffsets, events);
 	}
+	break;
+    }
+
+    case RemotePluginSetBufferSize:
+    {
+	int newSize = readInt(m_processFd);
+	setBufferSize(newSize);
+	m_bufferSize = newSize;
+	break;
+    }
+
+    case RemotePluginSetSampleRate:
+	setSampleRate(readInt(m_processFd));
+	break;
+    
+    case RemotePluginReset:
+	reset();
+	break;
+
+    default:
+	std::cerr << "WARNING: RemotePluginServer::dispatchProcessEvents: unexpected opcode "
+		  << opcode << std::endl;
     }
 }
 
@@ -321,22 +347,6 @@ RemotePluginServer::dispatchControlEvents()
 
     case RemotePluginGetMaker:
 	writeString(m_controlResponseFd, getMaker());
-	break;
-
-    case RemotePluginSetBufferSize:
-    {
-	int newSize = readInt(m_controlRequestFd);
-	setBufferSize(newSize);
-	m_bufferSize = newSize;
-	break;
-    }
-
-    case RemotePluginSetSampleRate:
-	setSampleRate(readInt(m_controlRequestFd));
-	break;
-    
-    case RemotePluginReset:
-	reset();
 	break;
     
     case RemotePluginTerminate:
@@ -443,7 +453,7 @@ RemotePluginServer::dispatchControlEvents()
 	break;
 
     default:
-	std::cerr << "WARNING: RemotePluginServer: unknown opcode "
+	std::cerr << "WARNING: RemotePluginServer::dispatchControlEvents: unexpected opcode "
 		  << opcode << std::endl;
     }
 }
