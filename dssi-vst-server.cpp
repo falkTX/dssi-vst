@@ -16,6 +16,7 @@
 #include <fcntl.h>
 #include <sys/un.h>
 #include <sys/time.h>
+#include <sys/poll.h>
 #include <time.h>
 
 #include <unistd.h>
@@ -103,7 +104,10 @@ public:
     void startEdit();
     void endEdit();
     void monitorEdits();
+    void scheduleGUINotify(int index, float value);
     void notifyGUI(int index, float value);
+    void checkGUIExited();
+    void terminateGUIProcess();
 
 private:
     AEffect *m_plugin;
@@ -111,10 +115,18 @@ private:
     std::string m_name;
     std::string m_maker;
 
+    // These should be referred to from the GUI thread only
     std::string m_guiFifoFile;
     int m_guiFifoFd;
     int m_guiEventsExpected;
     struct timeval m_lastGuiComms;
+
+    // To be written by the audio management thread and read by the GUI thread
+#define PARAMETER_CHANGE_COUNT 200
+    int m_paramChangeIndices[PARAMETER_CHANGE_COUNT];
+    float m_paramChangeValues[PARAMETER_CHANGE_COUNT];
+    int m_paramChangeReadIndex;
+    int m_paramChangeWriteIndex;
 
     std::map<int, float> m_parameterValues;
     enum {
@@ -138,6 +150,8 @@ RemoteVSTServer::RemoteVSTServer(std::string fileIdentifiers,
     m_guiFifoFile(""),
     m_guiFifoFd(-1),
     m_guiEventsExpected(0),
+    m_paramChangeReadIndex(0),
+    m_paramChangeWriteIndex(0),
     m_editLevel(EditNone)
 {
     pthread_mutex_lock(&mutex);
@@ -209,9 +223,12 @@ RemoteVSTServer::~RemoteVSTServer()
     pthread_mutex_lock(&mutex);
 
     if (m_guiFifoFd >= 0) {
-	writeOpcode(m_guiFifoFd, RemotePluginTerminate);
+	try {
+	    writeOpcode(m_guiFifoFd, RemotePluginTerminate);
+	} catch (...) { }
     }
 
+    m_plugin->dispatcher(m_plugin, effMainsChanged, 0, 0, NULL, 0);
     m_plugin->dispatcher(m_plugin, effClose, 0, 0, NULL, 0);
     delete[] m_defaults;
 
@@ -484,6 +501,7 @@ RemoteVSTServer::showGUI(std::string guiData)
 	if ((m_guiFifoFd = open(m_guiFifoFile.c_str(), O_WRONLY | O_NONBLOCK)) < 0) {
 	    perror(m_guiFifoFile.c_str());
 	    cerr << "WARNING: Failed to open FIFO to GUI manager process" << endl;
+	    pthread_mutex_unlock(&mutex);
 	    return;
 	}
     }
@@ -491,6 +509,7 @@ RemoteVSTServer::showGUI(std::string guiData)
     ShowWindow(hWnd, SW_SHOWNORMAL);
     UpdateWindow(hWnd);
     guiVisible = true;
+    m_paramChangeReadIndex = m_paramChangeWriteIndex;
 }
 
 void
@@ -539,6 +558,25 @@ RemoteVSTServer::monitorEdits()
 	    }
 	}
     }
+
+    while (m_paramChangeReadIndex != m_paramChangeWriteIndex) {
+	notifyGUI(m_paramChangeIndices[m_paramChangeReadIndex],
+		  m_paramChangeValues[m_paramChangeReadIndex]);
+	m_paramChangeReadIndex =
+	    (m_paramChangeReadIndex + 1) % PARAMETER_CHANGE_COUNT;
+    }
+}
+
+void
+RemoteVSTServer::scheduleGUINotify(int index, float value)
+{
+    int ni = (m_paramChangeWriteIndex + 1) % PARAMETER_CHANGE_COUNT;
+    if (ni == m_paramChangeReadIndex) return;
+
+    m_paramChangeIndices[m_paramChangeWriteIndex] = index;
+    m_paramChangeValues[m_paramChangeWriteIndex] = value;
+    
+    m_paramChangeWriteIndex = ni;
 }
 
 void
@@ -548,28 +586,56 @@ RemoteVSTServer::notifyGUI(int index, float value)
 
 	cerr << "RemoteVSTServer::notifyGUI(" << index << "," << value << "): about to lock" << endl;
 
-	pthread_mutex_lock(&mutex);
+	try {
+	    writeOpcode(m_guiFifoFd, RemotePluginSetParameter);
+	    int i = (int)index;
+	    writeInt(m_guiFifoFd, i);
+	    writeFloat(m_guiFifoFd, value);
 
-	writeOpcode(m_guiFifoFd, RemotePluginSetParameter);
-	int i = (int)index;
-	writeInt(m_guiFifoFd, i);
-	writeFloat(m_guiFifoFd, value);
+	    gettimeofday(&m_lastGuiComms, NULL);
+	    ++m_guiEventsExpected;
 
-	gettimeofday(&m_lastGuiComms, NULL);
-	++m_guiEventsExpected;
+	} catch (RemotePluginClosedException e) {
+	    hideGUI();
+	}
 
-	cerr << "wrote (" << i << "," << value << ") to gui (" << m_guiEventsExpected << " events expected now)" << endl;
-
-	pthread_mutex_unlock(&mutex);
+	cerr << "wrote (" << index << "," << value << ") to gui (" << m_guiEventsExpected << " events expected now)" << endl;
     }
 }
-    
+
+void
+RemoteVSTServer::checkGUIExited()
+{
+    if (m_guiFifoFd >= 0) {
+
+	struct pollfd pfd;
+	pfd.fd = m_guiFifoFd;
+	pfd.events = POLLHUP;
+
+	if (poll(&pfd, 1, 0) != 0) {
+	    m_guiFifoFd = -1;
+	}
+
+    }
+}
+
+void
+RemoteVSTServer::terminateGUIProcess()
+{
+    if (m_guiFifoFd >= 0) {
+	writeOpcode(m_guiFifoFd, RemotePluginTerminate);
+	m_guiFifoFd = -1;
+    }
+}
 
 long VSTCALLBACK
 hostCallback(AEffect *plugin, long opcode, long index,
 	     long value, void *ptr, float opt)
 {
+    cerr << "hostCallback(" << opcode << ")" << endl;
+
     static VstTimeInfo timeInfo;
+    int rv = 0;
 
     switch (opcode) {
 
@@ -593,7 +659,7 @@ hostCallback(AEffect *plugin, long opcode, long index,
 	    cerr << "dssi-vst-server[2]: audioMasterAutomate(" << index << "," << v << ")" << endl;
 
 	if (v != value) {
-	    remoteVSTServerInstance->notifyGUI(index, v);
+	    remoteVSTServerInstance->scheduleGUINotify(index, v);
 	}
 
 	break;
@@ -602,12 +668,14 @@ hostCallback(AEffect *plugin, long opcode, long index,
     case audioMasterVersion:
 	if (debugLevel > 1)
 	    cerr << "dssi-vst-server[2]: audioMasterVersion requested" << endl;
-	return 2300;
+	rv = 2300;
+	break;
 
     case audioMasterCurrentId:
 	if (debugLevel > 1)
 	    cerr << "dssi-vst-server[2]: audioMasterCurrentId requested" << endl;
-	return 0;
+	rv = 0;
+	break;
 
     case audioMasterIdle:
 	if (debugLevel > 1)
@@ -625,7 +693,8 @@ hostCallback(AEffect *plugin, long opcode, long index,
 	    cerr << "dssi-vst-server[2]: audioMasterWantMidi requested" << endl;
 	}
 	// happy to oblige
-	return 1;
+	rv = 1;
+	break;
 
     case audioMasterGetTime:
 //	if (debugLevel > 1)
@@ -633,7 +702,8 @@ hostCallback(AEffect *plugin, long opcode, long index,
 	timeInfo.samplePos = currentSamplePosition;
 	timeInfo.sampleRate = sampleRate;
 	timeInfo.flags = 0; // don't mark anything valid except default samplePos/Rate
-	return (long)&timeInfo;
+	rv = (long)&timeInfo;
+	break;
 
     case audioMasterProcessEvents:
 	if (debugLevel > 1)
@@ -649,17 +719,20 @@ hostCallback(AEffect *plugin, long opcode, long index,
 	if (debugLevel > 1)
 	    cerr << "dssi-vst-server[2]: audioMasterTempoAt requested" << endl;
 	// can't support this, return 120bpm
-	return 120 * 10000;
+	rv = 120 * 10000;
+	break;
 
     case audioMasterGetNumAutomatableParameters:
 	if (debugLevel > 1)
 	    cerr << "dssi-vst-server[2]: audioMasterGetNumAutomatableParameters requested" << endl;
-	return 5000;
+	rv = 5000;
+	break;
 
     case audioMasterGetParameterQuantization :
 	if (debugLevel > 1)
 	    cerr << "dssi-vst-server[2]: audioMasterGetParameterQuantization requested" << endl;
-	return 1;
+	rv = 1;
+	break;
 
     case audioMasterIOChanged:
 	if (debugLevel > 1)
@@ -672,7 +745,8 @@ hostCallback(AEffect *plugin, long opcode, long index,
 	    cerr << "dssi-vst-server[2]: audioMasterNeedIdle requested" << endl;
 	}
 	// might be nice to handle this better
-	return 1;
+	rv = 1;
+	break;
 
     case audioMasterSizeWindow:
 	if (debugLevel > 1) {
@@ -685,7 +759,8 @@ hostCallback(AEffect *plugin, long opcode, long index,
 			 SWP_NOACTIVATE | SWP_NOMOVE |
 			 SWP_NOOWNERZORDER | SWP_NOZORDER);
 	}
-	return 1;
+	rv = 1;
+	break;
 
     case audioMasterGetSampleRate:
 	if (debugLevel > 1)
@@ -731,20 +806,23 @@ hostCallback(AEffect *plugin, long opcode, long index,
 	if (debugLevel > 1)
 	    cerr << "dssi-vst-server[2]: audioMasterWillReplaceOrAccumulate requested" << endl;
 	// 0 -> unsupported, 1 -> replace, 2 -> accumulate
-	return 1;
+	rv = 1;
+	break;
 
     case audioMasterGetCurrentProcessLevel:
 	if (debugLevel > 1) {
 	    cerr << "dssi-vst-server[2]: audioMasterGetCurrentProcessLevel requested (level is " << (inProcessThread ? 2 : 1) << ")" << endl;
 	}
 	// 0 -> unsupported, 1 -> gui, 2 -> process, 3 -> midi/timer, 4 -> offline
-	if (inProcessThread) return 2;
-	else return 1;
+	if (inProcessThread) rv = 2;
+	else rv = 1;
+	break;
 
     case audioMasterGetAutomationState:
 	if (debugLevel > 1)
 	    cerr << "dssi-vst-server[2]: audioMasterGetAutomationState requested" << endl;
-	return 4; // read/write
+	rv = 4; // read/write
+	break;
 
     case audioMasterOfflineStart:
 	if (debugLevel > 1)
@@ -796,7 +874,8 @@ hostCallback(AEffect *plugin, long opcode, long index,
     case audioMasterGetVendorVersion:
 	if (debugLevel > 1)
 	    cerr << "dssi-vst-server[2]: audioMasterGetVendorVersion requested" << endl;
-	return long(RemotePluginVersion * 100);
+	rv = long(RemotePluginVersion * 100);
+	break;
 
     case audioMasterVendorSpecific:
 	if (debugLevel > 1)
@@ -817,14 +896,15 @@ hostCallback(AEffect *plugin, long opcode, long index,
 	    !strcmp((char*)ptr, "sendVstTimeInfo") ||
 	    !strcmp((char*)ptr, "sizeWindow") /* ||
 	    !strcmp((char*)ptr, "supplyIdle") */) {
-	    return 1;
+	    rv = 1;
 	}
 	break;
 
     case audioMasterGetLanguage:
 	if (debugLevel > 1)
 	    cerr << "dssi-vst-server[2]: audioMasterGetLanguage requested" << endl;
-	return kVstLangEnglish;
+	rv = kVstLangEnglish;
+	break;
 
     case audioMasterOpenWindow:
 	if (debugLevel > 1)
@@ -890,7 +970,7 @@ hostCallback(AEffect *plugin, long opcode, long index,
 	}
     }
 
-    return 0;
+    return rv;
 };
 
 DWORD WINAPI
@@ -903,7 +983,7 @@ AudioThreadMain(LPVOID parameter)
 	perror("Failed to set realtime priority for audio thread");
     }
 
-    while (1) {
+    while (!exiting) {
 	try {
 	    remoteVSTServerInstance->dispatch();
 	} catch (std::string message) {
@@ -913,14 +993,12 @@ AudioThreadMain(LPVOID parameter)
 	    cerr << "ERROR: Remote VST plugin communication failure" << endl;
 	    exiting = true;
 	}
-
-	if (exiting) {
-	    cerr << "Remote VST plugin audio thread: returning" << endl;
-	    param.sched_priority = 0;
-	    (void)sched_setscheduler(0, SCHED_OTHER, &param);
-	    return 0;
-	}
     }
+
+    cerr << "Remote VST plugin audio thread: returning" << endl;
+    param.sched_priority = 0;
+    (void)sched_setscheduler(0, SCHED_OTHER, &param);
+    return 0;
 }
 
 LRESULT WINAPI
@@ -928,8 +1006,7 @@ MainProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 {
     switch (msg) {
     case WM_DESTROY:
-	PostQuitMessage(0);
-	exiting = true;
+	remoteVSTServerInstance->terminateGUIProcess();
 	return 0;
     }
 
@@ -1204,6 +1281,7 @@ WinMain(HINSTANCE hInst, HINSTANCE hPrevInst, LPSTR cmdline, int cmdshow)
 	    }
 	}
 
+	remoteVSTServerInstance->checkGUIExited();
 	remoteVSTServerInstance->monitorEdits();
     }
 
@@ -1217,6 +1295,7 @@ WinMain(HINSTANCE hInst, HINSTANCE hPrevInst, LPSTR cmdline, int cmdshow)
     }
 
     delete remoteVSTServerInstance;
+    remoteVSTServerInstance = 0;
 
     FreeLibrary(libHandle);
     if (debugLevel > 0) {
