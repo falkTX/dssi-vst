@@ -324,7 +324,7 @@ DSSIVSTPluginInstance::run(unsigned long sampleCount)
 
 void
 DSSIVSTPluginInstance::runSynth(unsigned long sampleCount,
-			      snd_seq_event_t *events, unsigned long eventCount)
+				snd_seq_event_t *events, unsigned long eventCount)
 {
     try {
 	if (m_alsaDecoder) {
@@ -431,8 +431,23 @@ DSSIVSTPlugin::DSSIVSTPlugin()
 	for (int i = 0; i < parameters; ++i) {
 	    ports[i] = LADSPA_PORT_INPUT | LADSPA_PORT_CONTROL;
 	    names[i] = strdup(rec.parameterNames[i].c_str());
-	    hints[i].HintDescriptor = 0; //!!! need this
-	    std::cerr << "Port " << i << ": name " << names[i] << std::endl;
+	    hints[i].LowerBound = 0.0;
+	    hints[i].LowerBound = 1.0;
+	    hints[i].HintDescriptor =
+		LADSPA_HINT_BOUNDED_BELOW | LADSPA_HINT_BOUNDED_ABOVE;
+	    float deflt = rec.parameterDefaults[i];
+	    if (deflt < 0.0001) {
+		hints[i].HintDescriptor |= LADSPA_HINT_DEFAULT_MINIMUM;
+	    } else if (deflt > 0.999) {
+		hints[i].HintDescriptor |= LADSPA_HINT_DEFAULT_MAXIMUM;
+	    } else if (deflt < 0.35) {
+		hints[i].HintDescriptor |= LADSPA_HINT_DEFAULT_LOW;
+	    } else if (deflt > 0.65) {
+		hints[i].HintDescriptor |= LADSPA_HINT_DEFAULT_HIGH;
+	    } else {
+		hints[i].HintDescriptor |= LADSPA_HINT_DEFAULT_MIDDLE;
+	    }
+	    std::cerr << "Port " << i << ": name " << names[i] << ", hint " << hints[i].HintDescriptor << std::endl;
 	}
 
 	for (int i = 0; i < inputs; ++i) {

@@ -31,6 +31,7 @@ public:
 	int outputs;
 	int parameters;
 	std::vector<std::string> parameterNames;
+	std::vector<float> parameterDefaults;
 	int programs;
 	std::vector<std::string> programNames;
     };

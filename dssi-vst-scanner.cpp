@@ -44,7 +44,7 @@ hostCallback(AEffect *plugin, long opcode, long index,
 	return 2300;
 
     case audioMasterGetVendorString:
-	strcpy((char *)ptr, "Chris Cannam");
+	strcpy((char *)ptr, "Fervent Software");
 	break;
 
     case audioMasterGetProductString:
@@ -119,7 +119,7 @@ WinMain(HINSTANCE hInst, HINSTANCE hPrevInst, LPSTR cmdline, int cmdshow)
     char *destFile = 0;
 
     cout << "DSSI VST plugin scanner v0.2" << endl;
-    cout << "Copyright (c) 2004 Chris Cannam" << endl;
+    cout << "Copyright (c) 2004 Chris Cannam - Fervent Software" << endl;
 
     if (cmdline && cmdline[0]) destFile = strdup(cmdline);
     
@@ -133,22 +133,8 @@ WinMain(HINSTANCE hInst, HINSTANCE hPrevInst, LPSTR cmdline, int cmdshow)
 	}
     }
 
-    //!!! could do with an option for vst/vsti path, for the moment
-    // we'll deal only with effects
-
-//    char libPath[1024];
     HINSTANCE libHandle = 0;
 
-
-#ifdef NOT_DEFINED
-//!!!
-    char *vstDir = getenv("VST_DIR");
-    if (!vstDir) {
-	cerr << "dssi-vst-scanner: $VST_DIR not set" << endl;
-	exit(1);
-    }
-#endif
-    
     std::vector<std::string> vstPath = Paths::getPath
 	("VST_PATH", "/usr/local/lib/vst:/usr/lib/vst", "/vst");
 
@@ -199,6 +185,7 @@ WinMain(HINSTANCE hInst, HINSTANCE hPrevInst, LPSTR cmdline, int cmdshow)
 	    // parameter count (int)
 	    // then for each parameter:
 	    // name (64 chars)
+	    // default value (float)
 	    //
 	    // program count (int)
 	    // then for each program:
@@ -213,22 +200,6 @@ WinMain(HINSTANCE hInst, HINSTANCE hPrevInst, LPSTR cmdline, int cmdshow)
 		continue;
 	    }
 
-#ifdef NOT_DEFINED
-//!!!
-	    if (vstDir[strlen(vstDir) - 1] == '/') {
-		snprintf(libPath, 1024, "%s%s", vstDir, libname.c_str());
-	    } else {
-		snprintf(libPath, 1024, "%s/%s", vstDir, libname.c_str());
-	    }
-
-	    std::string libpathstr(libPath);
-
-	    if (home && home[0] != '\0') {
-		if (libpathstr.substr(0, strlen(home)) == std::string(home)) {
-		    libpathstr = libpathstr.substr(strlen(home) + 1);
-		}
-	    }
-#endif
 	    int fd = targetfd;
 	    bool haveCache = false;
 	    bool writingCache = false;
@@ -355,6 +326,9 @@ WinMain(HINSTANCE hInst, HINSTANCE hPrevInst, LPSTR cmdline, int cmdshow)
 		    memset(buffer, 0, 65);
 		    plugin->dispatcher(plugin, effGetParamName, i, 0, buffer, 0);
 		    write(fd, buffer, 64);
+		    //!!! do I need mains changed before this?:
+		    float f = plugin->getParameter(plugin, i);
+		    write(fd, &f, sizeof(float));
 		}
 
 		programs = plugin->numPrograms;

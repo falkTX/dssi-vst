@@ -243,7 +243,10 @@ RemoteVSTClient::queryPlugins(std::vector<PluginRecord> &plugins)
 	    for (int i = 0; i < rec.parameters; ++i) {
 		tryRead(fd, buffer, 64);
 		rec.parameterNames.push_back(std::string(buffer));
-		std::cerr << "Parameter " << i << ": name " << buffer << std::endl;
+		float f;
+		tryRead(fd, &f, sizeof(float));
+		rec.parameterDefaults.push_back(f);
+		std::cerr << "Parameter " << i << ": name " << buffer << ", default " << f << std::endl;
 	    }
 	    
 	    tryRead(fd, &rec.programs, sizeof(int));

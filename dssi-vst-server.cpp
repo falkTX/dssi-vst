@@ -90,6 +90,7 @@ private:
     AEffect *m_plugin;
     std::string m_name;
     std::string m_maker;
+    float *m_defaults;
     bool m_hasMIDI;
 };
 
@@ -151,11 +152,17 @@ RemoteVSTServer::RemoteVSTServer(std::string fileIdentifiers,
     if (buffer[0]) m_maker = buffer;
 
     m_plugin->dispatcher(m_plugin, effMainsChanged, 0, 1, NULL, 0);
+
+    m_defaults = new float[m_plugin->numParams];
+    for (int i = 0; i < m_plugin->numParams; ++i) {
+	m_defaults[i] = m_plugin->getParameter(m_plugin, i);
+    }
 }
 
 RemoteVSTServer::~RemoteVSTServer()
 {
     m_plugin->dispatcher(m_plugin, effClose, 0, 0, NULL, 0);
+    delete[] m_defaults;
 }
 
 void
@@ -222,8 +229,7 @@ RemoteVSTServer::getParameter(int p)
 float
 RemoteVSTServer::getParameterDefault(int p)
 {
-    //!!! fix
-    return m_plugin->getParameter(m_plugin, p);
+    return m_defaults[p];
 }
 
 std::string
@@ -329,7 +335,7 @@ hostCallback(AEffect *plugin, long opcode, long index,
     case audioMasterGetVendorString:
 	if (debugLevel > 1)
 	    cerr << "dssi-vst-server[2]: audioMasterGetVendorString requested" << endl;
-	strcpy((char *)ptr, "Chris Cannam");
+	strcpy((char *)ptr, "Fervent Software");
 	break;
 
     case audioMasterGetProductString:
@@ -490,7 +496,7 @@ WinMain(HINSTANCE hInst, HINSTANCE hPrevInst, LPSTR cmdline, int cmdshow)
     char *fileInfo = 0;
 
     cout << "DSSI VST plugin server v" << RemotePluginVersion << endl;
-    cout << "Copyright (c) 2004 Chris Cannam" << endl;
+    cout << "Copyright (c) 2004 Chris Cannam - Fervent Software" << endl;
 
     char *home = getenv("HOME");
 
