@@ -195,11 +195,13 @@ DSSIVSTPluginInstance::DSSIVSTPluginInstance(std::string dllName,
 
 DSSIVSTPluginInstance::~DSSIVSTPluginInstance()
 {
+    std::cerr << "DSSIVSTPluginInstance::~DSSIVSTPluginInstance" << std::endl;
+
     if (m_ok) {
 	try {
 	    std::cerr << "DSSIVSTPluginInstance::~DSSIVSTPluginInstance: asking plugin to terminate" << std::endl;
 	    m_plugin->terminate();
-	} catch (...) { }
+	} catch (RemotePluginClosedException) { }
     }
 
     delete m_plugin;
@@ -292,13 +294,19 @@ void
 DSSIVSTPluginInstance::selectProgram(unsigned long bank, unsigned long program)
 {
     if (bank != 0 || program >= m_programCount) return;
-    m_plugin->setCurrentProgram(program);
 
-    //!!! no -- we should put parameter values in the shm
-    for (unsigned long i = 0; i < m_controlPortCount; ++i) {
-	if (!m_controlPorts[i]) continue;
-	*m_controlPorts[i] = m_plugin->getParameter(i);
-	m_controlPortsSaved[i] = *m_controlPorts[i];
+    try {
+	m_plugin->setCurrentProgram(program);
+
+	//!!! no -- we should put parameter values in the shm
+	for (unsigned long i = 0; i < m_controlPortCount; ++i) {
+	    if (!m_controlPorts[i]) continue;
+	    *m_controlPorts[i] = m_plugin->getParameter(i);
+	    m_controlPortsSaved[i] = *m_controlPorts[i];
+	}
+    } catch (RemotePluginClosedException) {
+	m_ok = false;
+	return;
     }
 }
 
@@ -392,15 +400,20 @@ DSSIVSTPluginInstance::configure(std::string key, std::string value)
 {
     std::cerr << "DSSIVSTPluginInstance::configure(" << key << "," << value <<")" << std::endl;
 
-    if (key == "guiVisible") {
-	if (value.length() > 0) {
-	    std::cerr << "DSSIVSTPluginInstance::configure: show gui: value " << value << std::endl;
-	    m_plugin->showGUI(value);
-	} else {
-	    std::cerr << "DSSIVSTPluginInstance::configure: hide gui" << std::endl;
-	    m_plugin->hideGUI();
+    try {
+	if (key == "guiVisible") {
+	    if (value.length() > 0) {
+		std::cerr << "DSSIVSTPluginInstance::configure: show gui: value " << value << std::endl;
+		m_plugin->showGUI(value);
+	    } else {
+		std::cerr << "DSSIVSTPluginInstance::configure: hide gui" << std::endl;
+		m_plugin->hideGUI();
+	    }
 	}
+    } catch (RemotePluginClosedException) {
+	m_ok = false;
     }
+
     return "";
 }
 
@@ -621,6 +634,7 @@ DSSIVSTPlugin::deactivate(LADSPA_Handle instance)
 void
 DSSIVSTPlugin::cleanup(LADSPA_Handle instance)
 {
+    std::cerr << "DSSIVSTPlugin::cleanup" << std::endl;
     delete ((DSSIVSTPluginInstance *)instance);
 }
 
