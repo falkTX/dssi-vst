@@ -264,7 +264,7 @@ RemoteVSTClient::queryPlugins(std::vector<PluginRecord> &plugins)
 	    tryRead(fd, buffer, 64);
 	    rec.pluginName = buffer;
 	    
-	    std::cerr << "Plugin " << rec.pluginName << std::endl;
+//	    std::cerr << "Plugin " << rec.pluginName << std::endl;
 	    
 	    tryRead(fd, buffer, 64);
 	    rec.vendorName = buffer;
@@ -275,7 +275,7 @@ RemoteVSTClient::queryPlugins(std::vector<PluginRecord> &plugins)
 	    tryRead(fd, &rec.outputs, sizeof(int));
 	    tryRead(fd, &rec.parameters, sizeof(int));
 	    
-	    std::cerr << rec.parameters << " parameters" << std::endl;
+//	    std::cerr << rec.parameters << " parameters" << std::endl;
 	    
 	    for (int i = 0; i < rec.parameters; ++i) {
 		tryRead(fd, buffer, 64);
@@ -283,17 +283,17 @@ RemoteVSTClient::queryPlugins(std::vector<PluginRecord> &plugins)
 		float f;
 		tryRead(fd, &f, sizeof(float));
 		rec.parameterDefaults.push_back(f);
-		std::cerr << "Parameter " << i << ": name " << buffer << ", default " << f << std::endl;
+//		std::cerr << "Parameter " << i << ": name " << buffer << ", default " << f << std::endl;
 	    }
 	    
 	    tryRead(fd, &rec.programs, sizeof(int));
 	    
-	    std::cerr << rec.programs << " programs" << std::endl;
+//	    std::cerr << rec.programs << " programs" << std::endl;
 	    
 	    for (int i = 0; i < rec.programs; ++i) {
 		tryRead(fd, buffer, 64);
 		rec.programNames.push_back(std::string(buffer));
-		std::cerr << "Program " << i << ": name " << buffer << std::endl;
+//		std::cerr << "Program " << i << ": name " << buffer << std::endl;
 	    }	    
 	    
 	    plugins.push_back(rec);
