@@ -7,6 +7,7 @@
 
 #include <iostream>
 #include <fstream>
+#include <vector>
 #include <string>
 
 #include <sys/types.h>
@@ -21,6 +22,8 @@
 #include "AEffEditor.hpp"
 
 #include "remotepluginserver.h"
+
+#include "paths.h"
 
 #define APPLICATION_CLASS_NAME "dssi_vst"
 #define PLUGIN_ENTRY_POINT "main"
@@ -519,8 +522,51 @@ WinMain(HINSTANCE hInst, HINSTANCE hPrevInst, LPSTR cmdline, int cmdshow)
     cout << "Loading \"" << libname << "\"... ";
     if (debugLevel > 0) cout << endl;
 
-    char libPath[1024];
+//    char libPath[1024];
     HINSTANCE libHandle = 0;
+
+
+
+    std::vector<std::string> vstPath = Paths::getPath
+	("VST_PATH", "/usr/local/lib/vst:/usr/lib/vst", "/vst");
+
+    for (size_t i = 0; i < vstPath.size(); ++i) {
+	
+	std::string vstDir = vstPath[i];
+	std::string libPath;
+
+	if (vstDir[vstDir.length()-1] == '/') {
+	    libPath = vstDir + libname;
+	} else {
+	    libPath = vstDir + "/" + libname;
+	}
+
+	libHandle = LoadLibrary(libPath.c_str());
+	if (debugLevel > 0) {
+	    cerr << "dssi-vst-server[1]: " << (libHandle ? "" : "not ")
+		 << "found in " << libPath << endl;
+	}
+
+	if (!libHandle) {
+	    if (home && home[0] != '\0') {
+		if (libPath.substr(0, strlen(home)) == home) {
+		    libPath = libPath.substr(strlen(home) + 1);
+		}
+		libHandle = LoadLibrary(libPath.c_str());
+		if (debugLevel > 0) {
+		    cerr << "dssi-vst-server[1]: " << (libHandle ? "" : "not ")
+			 << "found in " << libPath << endl;
+		}
+	    }
+	}
+
+	if (libHandle) break;
+    }	
+
+#ifdef NOT_DEFINED
+
+
+
     char *vstDir = getenv("VSTI_DIR");
 
     if (vstDir) {
@@ -588,6 +634,8 @@ WinMain(HINSTANCE hInst, HINSTANCE hPrevInst, LPSTR cmdline, int cmdshow)
 	    cerr << "dssi-vst-server[1]: $VST_DIR not set" << endl;
 	}
     }
+
+#endif
 
     if (!libHandle) {
 	libHandle = LoadLibrary(libname);

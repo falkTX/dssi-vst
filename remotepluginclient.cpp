@@ -86,7 +86,6 @@ RemotePluginClient::RemotePluginClient() :
 
     m_shmFd = open(m_shmFileName, O_RDWR | O_CREAT | O_TRUNC, S_IRUSR | S_IWUSR);
     if (m_shmFd < 0) {
-	//!!! unlink all on errors
 	cleanup();
 	throw((std::string)"Failed to open or create shared memory file");
     }
@@ -100,12 +99,29 @@ RemotePluginClient::~RemotePluginClient()
 void
 RemotePluginClient::syncStartup()
 {
-    //!!! First one should be done using a nonblocking sleeping loop, with a
-    // timeout for remote plugin failure
+    // The first (write) fd we open in a nonblocking call, with a
+    // short retry loop so we can easily give up if the other end
+    // doesn't appear to be responding
 
-    if ((m_controlRequestFd = open(m_controlRequestFileName, O_WRONLY)) < 0) {
+    bool connected = false;
+
+    for (int attempt = 0; attempt < 6; ++attempt) {
+
+	if ((m_controlRequestFd =
+	     open(m_controlRequestFileName, O_WRONLY | O_NONBLOCK)) >= 0) {
+	    connected = true;
+	    break;
+	} else if (errno != ENXIO) {
+	    // an actual error occurred
+	    break;
+	}
+
+	sleep(1);
+    }
+
+    if (!connected) {
 	cleanup();
-	throw((std::string)"Failed to open FIFO");
+	throw((std::string)"Plugin server timed out on startup");
     }
 
     if ((m_controlResponseFd = open(m_controlResponseFileName, O_RDONLY)) < 0) {

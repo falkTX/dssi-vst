@@ -7,6 +7,7 @@
 
 #include <iostream>
 #include <fstream>
+#include <vector>
 #include <string>
 
 #include <sys/types.h>
@@ -22,6 +23,7 @@
 #include "AEffEditor.hpp"
 
 #include "remotepluginserver.h"
+#include "paths.h"
 
 #define APPLICATION_CLASS_NAME "dssi_vst"
 #define PLUGIN_ENTRY_POINT "main"
@@ -133,239 +135,274 @@ WinMain(HINSTANCE hInst, HINSTANCE hPrevInst, LPSTR cmdline, int cmdshow)
     //!!! could do with an option for vst/vsti path, for the moment
     // we'll deal only with effects
 
-    char libPath[1024];
+//    char libPath[1024];
     HINSTANCE libHandle = 0;
-    char *vstDir = getenv("VST_DIR");
 
+
+#ifdef NOT_DEFINED
+//!!!
+    char *vstDir = getenv("VST_DIR");
     if (!vstDir) {
 	cerr << "dssi-vst-scanner: $VST_DIR not set" << endl;
 	exit(1);
     }
+#endif
+    
+    std::vector<std::string> vstPath = Paths::getPath
+	("VST_PATH", "/usr/local/lib/vst:/usr/lib/vst", "/vst");
 
-    DIR *directory = opendir(vstDir);
-    if (!directory) {
-	cerr << "dssi-vst-scanner: couldn't read VST directory \""
-		  << vstDir << "\" (from $VST_DIR)" << std::endl;
-	if (targetfd != 0) close(targetfd);
-	return 1;
-    }
+    for (size_t i = 0; i < vstPath.size(); ++i) {
+	
+	std::string vstDir = vstPath[i];
 
-    struct dirent *entry;
-    int count = 0;
-
-    char *home = getenv("HOME");
-    std::string cacheDir = std::string(home) + "/.dssi-vst";
-    bool haveCacheDir = false;
-
-    DIR *test = opendir(cacheDir.c_str());
-    if (!test) {
-	if (mkdir(cacheDir.c_str(), 0755)) {
-	    cerr << "dssi-vst-scanner: failed to create cache directory " << cacheDir;
-	    perror(0);
-	} else {
-	    haveCacheDir = true;
-	}
-    } else {
-	haveCacheDir = true;
-	closedir(test);
-    }
-
-    while ((entry = readdir(directory))) {
-
-	// For each plugin, we write:
-	//
-	// unique id (unsigned long)
-	// dll name (64 chars)
-	// name (64 chars)
-	// vendor (64 chars)
-	// is synth (bool)
-	// have editor (bool)
-	// input count (int)
-	// output count (int)
-	// 
-	// parameter count (int)
-	// then for each parameter:
-	// name (64 chars)
-	//
-	// program count (int)
-	// then for each program:
-	// name (64 chars)
-
-	std::string libname = entry->d_name;
-
-	if (libname[0] == '.' ||
-	    libname.length() < 5 ||
-	    (libname.substr(libname.length() - 4) != ".dll" &&
-	     libname.substr(libname.length() - 4) != ".DLL")) {
+	DIR *directory = opendir(vstDir.c_str());
+	if (!directory) {
+//	    cerr << "dssi-vst-scanner: couldn't read VST directory \""
+//		 << vstDir << "\"" << std::endl;
 	    continue;
 	}
 
-	if (vstDir[strlen(vstDir) - 1] == '/') {
-	    snprintf(libPath, 1024, "%s%s", vstDir, libname.c_str());
-	} else {
-	    snprintf(libPath, 1024, "%s/%s", vstDir, libname.c_str());
-	}
-
-	std::string libpathstr(libPath);
-
-	if (home && home[0] != '\0') {
-	    if (libpathstr.substr(0, strlen(home)) == std::string(home)) {
-		libpathstr = libpathstr.substr(strlen(home) + 1);
-	    }
-	}
-
-	int fd = targetfd;
-	bool haveCache = false;
-	bool writingCache = false;
-	std::string cacheFileName = cacheDir + "/" + libname + ".cache";
-
-	if (haveCacheDir) {
+	struct dirent *entry;
+	int count = 0;
 	
-	    struct stat st;
-	    if (!stat(cacheFileName.c_str(), &st)) {
-		haveCache = true;
+	char *home = getenv("HOME");
+	std::string cacheDir = std::string(home) + "/.dssi-vst";
+	bool haveCacheDir = false;
+
+	DIR *test = opendir(cacheDir.c_str());
+	if (!test) {
+	    if (mkdir(cacheDir.c_str(), 0755)) {
+		cerr << "dssi-vst-scanner: failed to create cache directory " << cacheDir;
+		perror(0);
 	    } else {
-		if ((fd = open(cacheFileName.c_str(), O_WRONLY | O_CREAT, 0644)) < 0) {
-		    cerr << "dssi-vst-scanner: Failed to open cache file " << cacheFileName;
-		    perror("for writing");
-		    fd = targetfd;
+		haveCacheDir = true;
+	    }
+	} else {
+	    haveCacheDir = true;
+	    closedir(test);
+	}
+	
+	while ((entry = readdir(directory))) {
+	    
+	    // For each plugin, we write:
+	    //
+	    // unique id (unsigned long)
+	    // dll name (64 chars)
+	    // name (64 chars)
+	    // vendor (64 chars)
+	    // is synth (bool)
+	    // have editor (bool)
+	    // input count (int)
+	    // output count (int)
+	    // 
+	    // parameter count (int)
+	    // then for each parameter:
+	    // name (64 chars)
+	    //
+	    // program count (int)
+	    // then for each program:
+	    // name (64 chars)
+
+	    std::string libname = entry->d_name;
+
+	    if (libname[0] == '.' ||
+		libname.length() < 5 ||
+		(libname.substr(libname.length() - 4) != ".dll" &&
+		 libname.substr(libname.length() - 4) != ".DLL")) {
+		continue;
+	    }
+
+#ifdef NOT_DEFINED
+//!!!
+	    if (vstDir[strlen(vstDir) - 1] == '/') {
+		snprintf(libPath, 1024, "%s%s", vstDir, libname.c_str());
+	    } else {
+		snprintf(libPath, 1024, "%s/%s", vstDir, libname.c_str());
+	    }
+
+	    std::string libpathstr(libPath);
+
+	    if (home && home[0] != '\0') {
+		if (libpathstr.substr(0, strlen(home)) == std::string(home)) {
+		    libpathstr = libpathstr.substr(strlen(home) + 1);
+		}
+	    }
+#endif
+	    int fd = targetfd;
+	    bool haveCache = false;
+	    bool writingCache = false;
+	    std::string cacheFileName = cacheDir + "/" + libname + ".cache";
+
+	    if (haveCacheDir) {
+	
+		struct stat st;
+		if (!stat(cacheFileName.c_str(), &st)) {
+		    haveCache = true;
 		} else {
-		    writingCache = true;
+		    if ((fd = open(cacheFileName.c_str(), O_WRONLY | O_CREAT, 0644)) < 0) {
+			cerr << "dssi-vst-scanner: Failed to open cache file " << cacheFileName;
+			perror(" for writing");
+			fd = targetfd;
+		    } else {
+			writingCache = true;
+		    }
 		}
 	    }
-	}
 
-	if (!haveCache) {
+	    if (!haveCache) {
 
-	    int inputs = 0, outputs = 0, params = 0, programs = 0;
-	    char buffer[65];
-	    unsigned long uniqueId = 0;
-	    bool synth = false, gui = false;
-	    int i = 0;
-	    AEffect *(__stdcall* getInstance)(audioMasterCallback) = 0;
-	    AEffect *plugin = 0;
+		int inputs = 0, outputs = 0, params = 0, programs = 0;
+		char buffer[65];
+		unsigned long uniqueId = 0;
+		bool synth = false, gui = false;
+		int i = 0;
+		AEffect *(__stdcall* getInstance)(audioMasterCallback) = 0;
+		AEffect *plugin = 0;
+		std::string libPath;
 
-	    libHandle = LoadLibrary(libpathstr.c_str());
+		if (vstDir[vstDir.length()-1] == '/') {
+		    libPath = vstDir + libname;
+		} else {
+		    libPath = vstDir + "/" + libname;
+		}
+		
+		libHandle = LoadLibrary(libPath.c_str());
+		cerr << "dssi-vst-scanner: " << (libHandle ? "" : "not ")
+		     << "found in " << libPath << endl;
+		
+		if (!libHandle) {
+		    if (home && home[0] != '\0') {
+			if (libPath.substr(0, strlen(home)) == home) {
+			    libPath = libPath.substr(strlen(home) + 1);
+			}
+			libHandle = LoadLibrary(libPath.c_str());
+			cerr << "dssi-vst-scanner: " << (libHandle ? "" : "not ")
+			     << "found in " << libPath << endl;
+		    }
+		}
+		
+		if (!libHandle) {
+		    cerr << "dssi-vst-scanner: Couldn't load DLL " << libPath << endl;
+		    goto done;
+		}
 
-	    if (!libHandle) {
-		cerr << "dssi-vst-scanner: Couldn't load DLL " << libpathstr << endl;
-		goto done;
-	    }
+		getInstance = (AEffect*(__stdcall*)(audioMasterCallback))
+		    GetProcAddress(libHandle, PLUGIN_ENTRY_POINT);
 
-	    getInstance = (AEffect*(__stdcall*)(audioMasterCallback))
-		GetProcAddress(libHandle, PLUGIN_ENTRY_POINT);
+		if (!getInstance) {
+		    cerr << "dssi-vst-scanner: VST entrypoint \"" << PLUGIN_ENTRY_POINT
+			 << "\" not found in DLL \"" << libPath << "\"" << endl;
+		    goto done;
+		}
 
-	    if (!getInstance) {
-		cerr << "dssi-vst-scanner: VST entrypoint \"" << PLUGIN_ENTRY_POINT
-		     << "\" not found in DLL \"" << libpathstr << "\"" << endl;
-		goto done;
-	    }
+		plugin = getInstance(hostCallback);
 
-	    plugin = getInstance(hostCallback);
+		if (!plugin) {
+		    cerr << "dssi-vst-scanner: Failed to instantiate plugin in VST DLL \""
+			 << libPath << "\"" << endl;
+		    goto done;
+		}
 
-	    if (!plugin) {
-		cerr << "dssi-vst-scanner: Failed to instantiate plugin in VST DLL \""
-		     << libpathstr << "\"" << endl;
-		goto done;
-	    }
+		if (plugin->magic != kEffectMagic) {
+		    cerr << "dssi-vst-scanner: Not a VST effect in DLL \""
+			 << libPath << "\"" << endl;
+		    goto done;
+		}
 
-	    if (plugin->magic != kEffectMagic) {
-		cerr << "dssi-vst-scanner: Not a VST effect in DLL \""
-		     << libpathstr << "\"" << endl;
-		goto done;
-	    }
+		if (!plugin->flags & effFlagsCanReplacing) {
+		    cerr << "dssi-vst-scanner: Effect does not support processReplacing (required)"
+			 << endl;
+		    goto done;
+		}
 
-	    if (!plugin->flags & effFlagsCanReplacing) {
-		cerr << "dssi-vst-scanner: Effect does not support processReplacing (required)"
-		     << endl;
-		goto done;
-	    }
+		uniqueId = 6666 + count;
+		write(fd, &uniqueId, sizeof(unsigned long));
 
-	    uniqueId = 6666 + count;
-	    write(fd, &uniqueId, sizeof(unsigned long));
-
-	    memset(buffer, 0, 65);
-	    snprintf(buffer, 64, "%s", libname.c_str());
-	    write(fd, buffer, 64);
-
-	    memset(buffer, 0, 65);
-	    plugin->dispatcher(plugin, effGetEffectName, 0, 0, buffer, 0);
-	    if (buffer[0] == '\0') {
+		memset(buffer, 0, 65);
 		snprintf(buffer, 64, "%s", libname.c_str());
-	    }
-	    write(fd, buffer, 64);
-
-	    memset(buffer, 0, 65);
-	    plugin->dispatcher(plugin, effGetVendorString, 0, 0, buffer, 0);
-	    write(fd, buffer, 64);
-
-	    synth = false;
-	    if (plugin->flags & effFlagsIsSynth) synth = true;
-	    write(fd, &synth, sizeof(bool));
-
-	    gui = false;
-	    if (plugin->flags & effFlagsHasEditor) gui = true;
-	    write(fd, &gui, sizeof(bool));
-
-	    inputs = plugin->numInputs;
-	    write(fd, &inputs, sizeof(int));
-
-	    outputs = plugin->numOutputs;
-	    write(fd, &outputs, sizeof(int));
-
-	    params = plugin->numParams;
-	    write(fd, &params, sizeof(int));
-
-	    for (i = 0; i < params; ++i) {
-		memset(buffer, 0, 65);
-		plugin->dispatcher(plugin, effGetParamName, i, 0, buffer, 0);
 		write(fd, buffer, 64);
-	    }
 
-	    programs = plugin->numPrograms;
-	    write(fd, &programs, sizeof(int));
-
-	    for (i = 0; i < programs; ++i) {
 		memset(buffer, 0, 65);
-		// effGetProgramName appears to return the name of the
-		// current program, not program <index> -- though we
-		// pass in <index> as well, just in case
-		plugin->dispatcher(plugin, effSetProgram, 0, i, NULL, 0);
-		plugin->dispatcher(plugin, effGetProgramName, i, 0, buffer, 0);
-		write(fd, buffer, 64);
-	    }
-
-	done:
-	    if (plugin) plugin->dispatcher(plugin, effClose, 0, 0, NULL, 0);
-	    FreeLibrary(libHandle);
-	}
-
-	if (writingCache) {
-	    close(fd);
-	}
-
-	if (haveCache || writingCache) {
-	    // need to read from cache as well
-	    if ((fd = open(cacheFileName.c_str(), O_RDONLY)) < 0) {
-		cerr << "dssi-vst-scanner: Failed to open cache file " << cacheFileName;
-		perror("for reading");
-	    } else {
-		unsigned char c;
-		while (read(fd, &c, 1) == 1) {
-		    write(targetfd, &c, 1);
+		plugin->dispatcher(plugin, effGetEffectName, 0, 0, buffer, 0);
+		if (buffer[0] == '\0') {
+		    snprintf(buffer, 64, "%s", libname.c_str());
 		}
+		write(fd, buffer, 64);
+
+		memset(buffer, 0, 65);
+		plugin->dispatcher(plugin, effGetVendorString, 0, 0, buffer, 0);
+		write(fd, buffer, 64);
+
+		synth = false;
+		if (plugin->flags & effFlagsIsSynth) synth = true;
+		write(fd, &synth, sizeof(bool));
+
+		gui = false;
+		if (plugin->flags & effFlagsHasEditor) gui = true;
+		write(fd, &gui, sizeof(bool));
+
+		inputs = plugin->numInputs;
+		write(fd, &inputs, sizeof(int));
+
+		outputs = plugin->numOutputs;
+		write(fd, &outputs, sizeof(int));
+
+		params = plugin->numParams;
+		write(fd, &params, sizeof(int));
+
+		for (i = 0; i < params; ++i) {
+		    memset(buffer, 0, 65);
+		    plugin->dispatcher(plugin, effGetParamName, i, 0, buffer, 0);
+		    write(fd, buffer, 64);
+		}
+
+		programs = plugin->numPrograms;
+		write(fd, &programs, sizeof(int));
+
+		for (i = 0; i < programs; ++i) {
+		    memset(buffer, 0, 65);
+		    // effGetProgramName appears to return the name of the
+		    // current program, not program <index> -- though we
+		    // pass in <index> as well, just in case
+		    plugin->dispatcher(plugin, effSetProgram, 0, i, NULL, 0);
+		    plugin->dispatcher(plugin, effGetProgramName, i, 0, buffer, 0);
+		    write(fd, buffer, 64);
+		}
+
+	    done:
+		if (plugin) plugin->dispatcher(plugin, effClose, 0, 0, NULL, 0);
+		FreeLibrary(libHandle);
+	    }
+
+	    if (writingCache) {
 		close(fd);
 	    }
+
+	    if (haveCache || writingCache) {
+		// need to read from cache as well
+		if ((fd = open(cacheFileName.c_str(), O_RDONLY)) < 0) {
+		    cerr << "dssi-vst-scanner: Failed to open cache file " << cacheFileName;
+		    perror("for reading");
+		} else {
+		    unsigned char c;
+		    while (read(fd, &c, 1) == 1) {
+			write(targetfd, &c, 1);
+		    }
+		    close(fd);
+		}
+	    }
+
+	    ++count;
 	}
 
-	++count;
+	closedir(directory);
     }
 
-    closedir(directory);
     if (targetfd != 0) {
 	close(targetfd);
     }
-
+    
     return 0;
 }
 
+    

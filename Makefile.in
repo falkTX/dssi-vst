@@ -1,4 +1,10 @@
 
+### Most commonly changed configuration variables
+
+TARGET_DSSI_DIR       = /usr/local/lib/dssi
+INCLUDE_PATH          = -I$(HOME)/vst/vstsdk2.3/source/common
+
+
 ### Generic autoconf variables
 
 TOPSRCDIR             = @top_srcdir@
@@ -14,7 +20,6 @@ EXES                  = dssi-vst-server.exe dssi-vst-scanner.exe dssi-vst_gui.ex
 ### Common settings
 
 DEFINES               =
-INCLUDE_PATH          = -I/home/cannam/vst/vstsdk2.3/source/common
 DLL_PATH              =
 LIBRARY_PATH          = -L.
 LIBRARIES             = remoteplugin
@@ -116,25 +121,26 @@ SPEC_SRCS             = $(dssi-vst-server_exe_SPEC_SRCS) $(dssi-vst-scanner_exe_
 
 ### Generic autoconf targets
 
-all: wineapploader $(SUBDIRS) $(DLLS:%=%.so) $(EXES:%=%.so) vstsynth libremoteplugin.a dssi-vst.so
+all: apploader $(SUBDIRS) $(DLLS:%=%.so) $(EXES:%=%.so) vstsynth libremoteplugin.a dssi-vst.so
 
-wineapploader: wineapploader.in
-	sed -e 's,@bindir\@,$(bindir),g' -e 's,@winelibdir\@,.,g' $(SRCDIR)/wineapploader.in >$@ || $(RM) $@
+apploader: apploader.in
+	sed -e 's,@bindir\@,$(bindir),g' -e 's,@winelibdir\@,.,g' $(SRCDIR)/apploader.in >$@ || $(RM) $@
 
 @MAKE_RULES@
 
-install::
-	_list="$(SUBDIRS)"; for i in $$_list; do (cd $$i; $(MAKE) install) || exit 1; done
-	_list="$(EXES:%.exe=%)"; for i in $$_list; do $(INSTALL_SCRIPT) $$i $(bindir); done
-	_list="$(EXES:%=%.so) $(DLLS:%=%.so)"; for i in $$_list; do $(INSTALL_PROGRAM) $$i $(dlldir); done
+install:: dssi-vst.so dssi-vst-scanner.exe.so dssi-vst-server.exe.so dssi-vst_gui.exe.so apploader
+	$(MKDIR) $(TARGET_DSSI_DIR)
+	$(INSTALL) dssi-vst.so $(TARGET_DSSI_DIR)
+	$(MKDIR) $(TARGET_DSSI_DIR)/dssi-vst
+	$(INSTALL) dssi-vst-scanner.exe.so dssi-vst-server.exe.so dssi-vst_gui.exe.so apploader $(TARGET_DSSI_DIR)/dssi-vst/
+	( cd $(TARGET_DSSI_DIR)/dssi-vst/ ; rm -f dssi-vst-scanner dssi-vst-server dssi-vst_gui ; ln -s apploader dssi-vst-scanner ; ln -s apploader dssi-vst-server ; ln -s apploader dssi-vst_gui ; chmod a+x * ../dssi-vst.so )
 
 uninstall::
-	_list="$(SUBDIRS)"; for i in $$_list; do (cd $$i; $(MAKE) uninstall) || exit 1; done
-	_list="$(EXES:%.exe=%)"; for i in $$_list; do $(RM) $(bindir)/$$i;done
-	_list="$(EXES:%=%.so) $(DLLS:%=%.so)"; for i in $$_list; do $(RM) $(dlldir)/$$i;done
+	$(RM) $(TARGET_DSSI_DIR)/dssi-vst.so
+	$(RM) -r $(TARGET_DSSI_DIR)/dssi-vst
 
 clean::
-	$(RM) wineapploader
+	$(RM) apploader
 
 distclean: clean
 	$(RM) config.* configure.lineno Make.rules
@@ -179,7 +185,7 @@ $(dssi-vst-scanner_exe_MODULE).so: $(dssi-vst-scanner_exe_MODULE).dbg.o $(dssi-v
 vstsynth:	vstsynth.cpp remoteplugin.h remotepluginclient.h remotevstclient.o libremoteplugin.a
 		g++ -g3 -I/usr/local/include -L/usr/local/lib -Wall vstsynth.cpp remotevstclient.o -o vstsynth -L. -lremoteplugin -ljack -lasound
 
-libremoteplugin.a:	remotepluginclient.o remotepluginserver.o rdwrops.o
+libremoteplugin.a:	remotepluginclient.o remotepluginserver.o rdwrops.o paths.o
 	ar r $@ $^
 
 remotepluginclient.o:	remotepluginclient.cpp remotepluginclient.h remoteplugin.h

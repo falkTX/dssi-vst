@@ -1,22 +1,14 @@
 #!/bin/sh
 #
 # Wrapper script to start a Winelib application once it is installed
-#
-# Copyright (C) 2002 Alexandre Julliard
+# Based on wineapploader, Copyright (C) 2002 Alexandre Julliard
+# Modified to support starting application from same directory as
+# this script
 
 # determine the app Winelib library name
 appname=`basename "$0" .exe`.exe
 
-#allow Wine to load Winelib application from the current directory
-export WINEDLLPATH=$WINEDLLPATH:@winelibdir@
-
-# first try explicit WINELOADER
-if [ -x "$WINELOADER" ]; then exec "$WINELOADER" "$appname" "$@"; fi
-
-# then default bin directory
-if [ -x "@bindir@/wine" ]; then exec "@bindir@/wine" "$appname" "$@"; fi
-
-# now try the directory containing $0
+# and app directory
 appdir=""
 case "$0" in
   */*)
@@ -34,6 +26,17 @@ case "$0" in
     done
     ;;
 esac
+
+# allow Wine to load Winelib application from the current directory and app directory
+export WINEDLLPATH=$WINEDLLPATH:"$appdir":.
+
+# first try explicit WINELOADER
+if [ -x "$WINELOADER" ]; then exec "$WINELOADER" "$appname" "$@"; fi
+
+# then default bin directory
+if [ -x "@bindir@/wine" ]; then exec "@bindir@/wine" "$appname" "$@"; fi
+
+# now try the directory containing $0
 if [ -x "$appdir/wine" ]; then exec "$appdir/wine" "$appname" "$@"; fi
 
 # finally look in PATH

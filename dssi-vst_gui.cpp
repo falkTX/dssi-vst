@@ -7,6 +7,7 @@
 
 #include <iostream>
 #include <fstream>
+#include <vector>
 #include <string>
 
 #include <sys/types.h>
@@ -15,6 +16,7 @@
 #include <sys/un.h>
 
 #include <lo/lo.h>
+#include <lo/lo_lowlevel.h>
 
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
@@ -22,10 +24,12 @@
 #include "aeffectx.h"
 #include "AEffEditor.hpp"
 
+#include "paths.h"
+
 #define APPLICATION_CLASS_NAME "dssi_vst"
 #define PLUGIN_ENTRY_POINT "main"
 
-static bool inProcessThread = false;
+//!!!static bool inProcessThread = false;
 static bool exiting = false;
 static HWND hWnd = 0;
 static double currentSamplePosition = 0.0;
@@ -37,7 +41,12 @@ static int sampleRate = 0;
 static int debugLevel = 3;
 
 static AEffect *plugin = 0;
-static char *serverurl = 0;
+static lo_server oscserver = 0;
+
+static char *hosturl = 0;
+static char *hosthostname = 0;
+static char *hostport = 0;
+static char *hostpath = 0;
 
 using std::cout;
 using std::cerr;
@@ -61,10 +70,9 @@ hostCallback(AEffect *plugin, long opcode, long index,
 	    cerr << "dssi-vst_gui[2]: audioMasterAutomate(" << index << "," << value << ")" << endl;
 	    cerr << "dssi-vst_gui[2]: actual value " << actual << endl;
 	}
-	lo_address hostaddr = lo_address_new(lo_url_get_hostname(serverurl),
-					     lo_url_get_port(serverurl));
+	lo_address hostaddr = lo_address_new(hosthostname, hostport);
 	lo_send(hostaddr,
-		(std::string(lo_url_get_path(serverurl)) + "/control").c_str(),
+		(std::string(hostpath) + "/control").c_str(),
 		"if",
 		index,
 		actual);
@@ -153,11 +161,12 @@ hostCallback(AEffect *plugin, long opcode, long index,
 
     case audioMasterGetCurrentProcessLevel:
 	if (debugLevel > 1) {
-	    cerr << "dssi-vst_gui[2]: audioMasterGetCurrentProcessLevel requested (level is " << (inProcessThread ? 2 : 1) << ")" << endl;
+//!!!	    cerr << "dssi-vst_gui[2]: audioMasterGetCurrentProcessLevel requested (level is " << (inProcessThread ? 2 : 1) << ")" << endl;
 	}
 	// 0 -> unsupported, 1 -> gui, 2 -> process, 3 -> midi/timer, 4 -> offline
-	if (inProcessThread) return 2;
-	else return 1;
+//!!!	if (inProcessThread) return 2;
+//!!!	else return 1;
+	return 2;
 
     case audioMasterGetParameterQuantization:
 	if (debugLevel > 1) {
@@ -203,14 +212,39 @@ hostCallback(AEffect *plugin, long opcode, long index,
 DWORD WINAPI
 AudioThreadMain(LPVOID parameter)
 {
+    float **inputs, **outputs;
+
+    if (plugin && plugin->numInputs > 0) {
+	inputs = new float *[plugin->numInputs];
+	for (int i = 0; i < plugin->numInputs; ++i) {
+	    inputs[i] = new float[1024];
+	}
+    } else {
+	inputs = 0;
+    }
+
+    if (plugin && plugin->numOutputs > 0) {
+	outputs = new float *[plugin->numOutputs];
+	for (int i = 0; i < plugin->numOutputs; ++i) {
+	    outputs[i] = new float[1024];
+	}
+    } else {
+	outputs = 0;
+    }
+
     while (1) {
+
+	lo_server_recv_noblock(oscserver, 30);
+	
+	if (plugin) plugin->processReplacing(plugin, inputs, outputs, 1024);
+
 	    //!!!
 //	    if (plugin) plugin->processReplacing(plugin, inputs, outputs, 1024);
 //	    remoteVSTServerInstance->dispatch();
 	
 	//!!! need to at least maintain the pretence of running the thing
 
-	sleep(1); //!!!
+	usleep(30); //!!!
 
 	if (exiting) return 0;
     }
@@ -364,7 +398,7 @@ WinMain(HINSTANCE hInst, HINSTANCE hPrevInst, LPSTR cmdline, int cmdshow)
 	if (cmdline[0] == '"' || cmdline[0] == '\'') offset = 1;
 	for (int ci = offset; ; ++ci) {
 	    if (isspace(cmdline[ci]) || !cmdline[ci]) {
-		if (!serverurl) serverurl = strndup(cmdline + offset, ci - offset);
+		if (!hosturl) hosturl = strndup(cmdline + offset, ci - offset);
 		else if (!pluginlibname) pluginlibname = strndup(cmdline + offset, ci - offset);
 		else if (!label) {
 		    label = strndup(cmdline + offset, ci - offset);
@@ -386,7 +420,7 @@ WinMain(HINSTANCE hInst, HINSTANCE hPrevInst, LPSTR cmdline, int cmdshow)
 	}
     }
 
-    if (!serverurl || !serverurl[0] ||
+    if (!hosturl || !hosturl[0] ||
 	!pluginlibname || !pluginlibname[0] ||
 	!label || !label[0] ||
 	!friendlyname || !friendlyname[0]) {
@@ -400,8 +434,47 @@ WinMain(HINSTANCE hInst, HINSTANCE hPrevInst, LPSTR cmdline, int cmdshow)
     cout << "Loading \"" << libname << "\"... ";
     if (debugLevel > 0) cout << endl;
 
-    char libPath[1024];
+//    char libPath[1024];
     HINSTANCE libHandle = 0;
+
+    std::vector<std::string> vstPath = Paths::getPath
+	("VST_PATH", "/usr/local/lib/vst:/usr/lib/vst", "/vst");
+
+    for (size_t i = 0; i < vstPath.size(); ++i) {
+	
+	std::string vstDir = vstPath[i];
+	std::string libPath;
+
+	if (vstDir[vstDir.length()-1] == '/') {
+	    libPath = vstDir + libname;
+	} else {
+	    libPath = vstDir + "/" + libname;
+	}
+
+	libHandle = LoadLibrary(libPath.c_str());
+	if (debugLevel > 0) {
+	    cerr << "dssi-vst_gui[1]: " << (libHandle ? "" : "not ")
+		 << "found in " << libPath << endl;
+	}
+
+	if (!libHandle) {
+	    if (home && home[0] != '\0') {
+		if (libPath.substr(0, strlen(home)) == home) {
+		    libPath = libPath.substr(strlen(home) + 1);
+		}
+		libHandle = LoadLibrary(libPath.c_str());
+		if (debugLevel > 0) {
+		    cerr << "dssi-vst_gui[1]: " << (libHandle ? "" : "not ")
+			 << "found in " << libPath << endl;
+		}
+	    }
+	}
+
+	if (libHandle) break;
+    }	
+
+#ifdef NOT_DEFINED	
+
     char *vstDir = getenv("VSTI_DIR");
 
     if (vstDir) {
@@ -469,6 +542,7 @@ WinMain(HINSTANCE hInst, HINSTANCE hPrevInst, LPSTR cmdline, int cmdshow)
 	    cerr << "dssi-vst_gui[1]: $VST_DIR not set" << endl;
 	}
     }
+#endif
 
     if (!libHandle) {
 	libHandle = LoadLibrary(libname);
@@ -480,6 +554,7 @@ WinMain(HINSTANCE hInst, HINSTANCE hPrevInst, LPSTR cmdline, int cmdshow)
 
     if (!libHandle) {
 	cerr << "dssi-vst_gui: ERROR: Couldn't load VST DLL \"" << libname << "\"" << endl;
+	//!!! pop up an error dialog
 	return 1;
     }
 
@@ -497,6 +572,7 @@ WinMain(HINSTANCE hInst, HINSTANCE hPrevInst, LPSTR cmdline, int cmdshow)
     if (!getInstance) {
 	cerr << "dssi-vst_gui: ERROR: VST entrypoint \"" << PLUGIN_ENTRY_POINT
 	     << "\" not found in DLL \"" << libname << "\"" << endl;
+	//!!! pop up an error dialog
 	return 1;
     } else if (debugLevel > 0) {
 	cerr << "dssi-vst_gui[1]: VST entrypoint \"" << PLUGIN_ENTRY_POINT
@@ -522,17 +598,10 @@ WinMain(HINSTANCE hInst, HINSTANCE hPrevInst, LPSTR cmdline, int cmdshow)
 
     if (!(plugin->flags & effFlagsHasEditor)) {
 	cerr << "dssi-vst_gui: ERROR: Instrument has no GUI (required)" << endl;
+	//!!! pop up an error dialog
 	return 1;
     } else if (debugLevel > 0) {
 	cerr << "dssi-vst_gui[1]: synth has a GUI" << endl;
-    }
-
-    if (!plugin->flags & effFlagsCanReplacing) {
-	cerr << "dssi-vst_gui: ERROR: Instrument does not support processReplacing (required)"
-	     << endl;
-	return 1;
-    } else if (debugLevel > 0) {
-	cerr << "dssi-vst_gui[1]: synth supports processReplacing" << endl;
     }
 
     cout << "Initialising Windows subsystem... ";
@@ -593,24 +662,26 @@ WinMain(HINSTANCE hInst, HINSTANCE hPrevInst, LPSTR cmdline, int cmdshow)
 
     cout << "done" << endl;
 
-    lo_server_thread thread = lo_server_thread_new(NULL, osc_error);
-    lo_server_thread_add_method(thread, "/dssi/control", "if", control_handler, 0);
-    lo_server_thread_add_method(thread, "/dssi/program", "ii", program_handler, 0);
-    lo_server_thread_add_method(thread, "/dssi/configure", "ss", configure_handler, 0);
-    lo_server_thread_add_method(thread, "/dssi/show", "", show_handler, 0);
-    lo_server_thread_add_method(thread, "/dssi/hide", "", hide_handler, 0);
-    lo_server_thread_add_method(thread, "/dssi/quit", "", quit_handler, 0);
-    lo_server_thread_add_method(thread, NULL, NULL, debug_handler, 0);
-    lo_server_thread_start(thread);
+    oscserver = lo_server_new(NULL, osc_error);
+    lo_server_add_method(oscserver, "/dssi/control", "if", control_handler, 0);
+    lo_server_add_method(oscserver, "/dssi/program", "ii", program_handler, 0);
+    lo_server_add_method(oscserver, "/dssi/configure", "ss", configure_handler, 0);
+    lo_server_add_method(oscserver, "/dssi/show", "", show_handler, 0);
+    lo_server_add_method(oscserver, "/dssi/hide", "", hide_handler, 0);
+    lo_server_add_method(oscserver, "/dssi/quit", "", quit_handler, 0);
+    lo_server_add_method(oscserver, NULL, NULL, debug_handler, 0);
 
-    cout << "started lo thread (url is " << lo_server_thread_get_url(thread) << ")" << endl;
+    hosthostname = lo_url_get_hostname(hosturl);
+    hostport = lo_url_get_port(hosturl);
+    hostpath = lo_url_get_path(hosturl);
 
-    lo_address hostaddr = lo_address_new(lo_url_get_hostname(serverurl),
-					 lo_url_get_port(serverurl));
+    cout << "created lo server (url is " << lo_server_get_url(oscserver) << ") - update path is " << std::string(hostpath) << "/update" << endl;
+
+    lo_address hostaddr = lo_address_new(hosthostname, hostport);
     lo_send(hostaddr,
-	    (std::string(lo_url_get_path(serverurl)) + "/update").c_str(),
+	    (std::string(hostpath) + "/update").c_str(),
 	    "s",
-	    (std::string(lo_server_thread_get_url(thread)) + "dssi").c_str());
+	    (std::string(lo_server_get_url(oscserver)) + "dssi").c_str());
 
     DWORD threadId = 0;
     HANDLE threadHandle = CreateThread(0, 0, AudioThreadMain, 0, 0, &threadId);
@@ -625,6 +696,7 @@ WinMain(HINSTANCE hInst, HINSTANCE hPrevInst, LPSTR cmdline, int cmdshow)
 
     MSG msg;
     exiting = false;
+
     while (GetMessage(&msg, 0, 0, 0)) {
 	DispatchMessage(&msg);
 	if (exiting) break;

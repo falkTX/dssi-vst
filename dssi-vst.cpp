@@ -190,8 +190,10 @@ DSSIVSTPluginInstance::~DSSIVSTPluginInstance()
 {
     if (m_ok) {
 	m_plugin->terminate();
-	delete m_plugin;
     }
+
+    delete m_plugin;
+
     if (m_alsaDecoder) {
 	snd_midi_event_free(m_alsaDecoder);
     }
@@ -393,7 +395,13 @@ DSSIVSTPluginInstance::freeFields(DSSI_Descriptor &descriptor)
 DSSIVSTPlugin::DSSIVSTPlugin()
 {
     std::vector<RemoteVSTClient::PluginRecord> plugins;
-    RemoteVSTClient::queryPlugins(plugins);
+
+    try {
+	RemoteVSTClient::queryPlugins(plugins);
+    } catch (std::string error) {
+	std::cerr << "DSSIVSTPlugin: Error on plugin query: " << error << std::endl;
+	return;
+    }
     
     for (unsigned int p = 0; p < plugins.size(); ++p) {
 

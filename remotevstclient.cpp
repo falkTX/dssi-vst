@@ -9,10 +9,13 @@
 
 #include <sys/un.h>
 #include <sys/socket.h>
+#include <sys/poll.h>
 #include <fcntl.h>
 #include <iostream>
+#include <dirent.h>
 
 #include "rdwrops.h"
+#include "paths.h"
 
 RemoteVSTClient::RemoteVSTClient(std::string dllName) :
     RemotePluginClient()
@@ -21,19 +24,64 @@ RemoteVSTClient::RemoteVSTClient(std::string dllName) :
     std::string arg = dllName + "," + getFileIdentifiers();
     const char *argStr = arg.c_str();
 
-    std::cerr << "RemoteVSTClient: executing wine dssi-vst-server.exe.so " << argStr << std::endl;
-    
-    if ((child = fork()) < 0) {
-	cleanup();
-	throw((std::string)"Fork failed");
-    } else if (child == 0) { // child process
-	if (execlp("wine", "wine", "dssi-vst-server.exe.so", argStr, 0)) {
-	    perror("Exec failed");
-	    exit(1);
+    // We want to run the dssi-vst-server script, which runs wine
+    // dssi-vst-server.exe.so.  We expect to find this script in the
+    // same subdirectory of a directory in the DSSI_PATH as a host
+    // would look for the GUI for this plugin: one called dssi-vst.
+    // See also RemoteVSTClient::queryPlugins below.
+
+    std::vector<std::string> dssiPath = Paths::getPath
+	("DSSI_PATH", "/usr/local/lib/dssi:/usr/lib/dssi", "/.dssi");
+
+    bool found = false;
+
+    for (size_t i = 0; i < dssiPath.size(); ++i) {
+
+	std::string subDir = dssiPath[i] + "/dssi-vst";
+
+	DIR *directory = opendir(subDir.c_str());
+	if (!directory) {
+	    continue;
+	}
+	closedir(directory);
+
+	struct stat st;
+	std::string fileName = subDir + "/dssi-vst-server";
+
+	if (stat(fileName.c_str(), &st)) {
+	    continue;
+	}
+
+	if (!(S_ISREG(st.st_mode) || S_ISLNK(st.st_mode)) ||
+	    !(st.st_mode & (S_IXUSR | S_IXGRP | S_IXOTH))) {
+
+	    std::cerr << "RemoteVSTClient: file " << fileName
+		      << " exists but can't be executed" << std::endl;
+	    continue;
+	}
+
+	found = true;
+
+	std::cerr << "RemoteVSTClient: executing "
+		  << fileName << " " << argStr << std::endl;
+
+	if ((child = fork()) < 0) {
+	    cleanup();
+	    throw((std::string)"Fork failed");
+	} else if (child == 0) { // child process
+	    if (execlp(fileName.c_str(), fileName.c_str(), argStr, 0)) {
+		perror("Exec failed");
+		exit(1);
+	    }
 	}
     }
 
-    syncStartup();
+    if (!found) {
+	cleanup();
+	throw((std::string)"Failed to find dssi-vst-server executable");
+    } else {
+	syncStartup();
+    }
 }
 
 RemoteVSTClient::~RemoteVSTClient()
@@ -43,37 +91,117 @@ RemoteVSTClient::~RemoteVSTClient()
 void
 RemoteVSTClient::queryPlugins(std::vector<PluginRecord> &plugins)
 {
-    char tmpFileBase[60];
+    char fifoFile[60];
 
-    sprintf(tmpFileBase, "/tmp/rplugin_qry_XXXXXX");
-    if (mkstemp(tmpFileBase) < 0) {
+    sprintf(fifoFile, "/tmp/rplugin_qry_XXXXXX");
+    if (mkstemp(fifoFile) < 0) {
 	throw((std::string)"Failed to obtain temporary filename");
     }
 
-    unlink(tmpFileBase);
-    if (mkfifo(tmpFileBase, 0666)) { //!!! what permission is correct here?
-	perror(tmpFileBase);
+    unlink(fifoFile);
+    if (mkfifo(fifoFile, 0666)) { //!!! what permission is correct here?
+	perror(fifoFile);
 	throw((std::string)"Failed to create FIFO");
     }
 
+    // We open the fd nonblocking, then start the scanner, then wait
+    // to see whether the scanner starts sending anything on it.  If
+    // no input is available after a certain time, give up.
+
+    int fd = -1;
+
+    if ((fd = open(fifoFile, O_RDONLY | O_NONBLOCK)) < 0) {
+	unlink(fifoFile);
+	throw((std::string)"Failed to open FIFO");
+    }
+
+    // We want to run the dssi-vst-scanner script, which runs wine
+    // dssi-vst-scanner.exe.so.  We expect to find this script in the
+    // same subdirectory of a directory in the DSSI_PATH as a host
+    // would look for the GUI for this plugin: one called dssi-vst.
+    // See also the RemoteVSTClient constructor above.
+
+    std::vector<std::string> dssiPath = Paths::getPath
+	("DSSI_PATH", "/usr/local/lib/dssi:/usr/lib/dssi", "/.dssi");
+
+    bool found = false;
     pid_t child;
-    
-    if ((child = fork()) < 0) {
-	unlink(tmpFileBase);
-	throw((std::string)"Fork failed");
-    } else if (child == 0) { // child process
-	if (execlp("wine", "wine", "dssi-vst-scanner.exe.so", tmpFileBase, 0)) {
-	    perror("Exec failed");
-	    exit(1);
+
+    for (size_t i = 0; i < dssiPath.size(); ++i) {
+
+	std::string subDir = dssiPath[i] + "/dssi-vst";
+
+	DIR *directory = opendir(subDir.c_str());
+	if (!directory) {
+	    continue;
+	}
+	closedir(directory);
+
+	struct stat st;
+	std::string fileName = subDir + "/dssi-vst-scanner";
+
+	if (stat(fileName.c_str(), &st)) {
+	    continue;
+	}
+
+	if (!(S_ISREG(st.st_mode) || S_ISLNK(st.st_mode)) ||
+	    !(st.st_mode & (S_IXUSR | S_IXGRP | S_IXOTH))) {
+
+	    std::cerr << "RemoteVSTClient: file " << fileName
+		      << " exists but can't be executed" << std::endl;
+	    continue;
+	}
+
+	found = true;
+
+	std::cerr << "RemoteVSTClient: executing "
+		  << fileName << " " << fifoFile << std::endl;
+
+	if ((child = fork()) < 0) {
+	    unlink(fifoFile);
+	    throw((std::string)"Fork failed");
+	} else if (child == 0) { // child process
+	    if (execlp(fileName.c_str(), fileName.c_str(), fifoFile, 0)) {
+		perror("Exec failed");
+		unlink(fifoFile);
+		exit(1);
+	    }
 	}
     }
 
-    //!!! again, should do this via nonblocking loop
+    if (!found) {
+	unlink(fifoFile);
+	throw((std::string)"Failed to find dssi-vst-scanner executable");
+    }
 
-    int fd = -1;
-    if ((fd = open(tmpFileBase, O_RDONLY)) < 0) {
-	unlink(tmpFileBase);
-	throw((std::string)"Failed to open FIFO");
+    struct pollfd pfd;
+    pfd.fd = fd;
+    pfd.events = POLLIN;
+    int sec;
+
+    for (sec = 0; sec < 6; ++sec) {
+
+	int rv = poll(&pfd, 1, 1000);
+
+	if (rv < 0) {
+	    if (errno == EINTR || errno == EAGAIN) {
+		// try again
+		sleep(1);
+		continue;
+	    } else {
+		close(fd);
+		unlink(fifoFile);
+		throw ((std::string)"Plugin scanner startup failed.");
+	    }
+	} else if (rv > 0) {
+	    break;
+	}
+    }
+
+    if (sec >= 6) {
+	close(fd);
+	unlink(fifoFile);
+	throw ((std::string)"Plugin scanner timed out on startup.");
     }
 
     try {
@@ -136,6 +264,6 @@ RemoteVSTClient::queryPlugins(std::vector<PluginRecord> &plugins)
     }
 
     close(fd);
-    unlink(tmpFileBase);
+    unlink(fifoFile);
 }
 

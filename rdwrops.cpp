@@ -7,25 +7,35 @@
 
 #include "rdwrops.h"
 
+#include <errno.h>
+
+
 extern void
 rdwr_tryRead(int fd, void *buf, size_t count, const char *file, int line)
 {
     ssize_t r = 0;
 
     while ((r = read(fd, buf, count)) < (ssize_t)count) {
-	
-	if (r < 0) {
-	    char message[100];
-	    sprintf(message, "Read failed on fd %d at %s:%d", fd, file, line);
-	    perror(message);
-	    throw RemotePluginClosedException();
-	} else if (r == 0) {
+
+	if (r == 0) {
 	    // end of file
 	    throw RemotePluginClosedException();
+	} else if (r < 0) {
+	    if (errno != EAGAIN) {
+		char message[100];
+		sprintf(message, "Read failed on fd %d at %s:%d", fd, file, line);
+		perror(message);
+		throw RemotePluginClosedException();
+	    }
+	    r = 0;
 	}
 
 	buf = (void *)(((char *)buf) + r);
 	count -= r;
+
+	if (count > 0) {
+	    usleep(20);
+	}
     }
 }
 
