@@ -35,6 +35,7 @@ static snd_midi_event_t *alsaDecoder = 0;
 static pthread_mutex_t pluginMutex = PTHREAD_MUTEX_INITIALIZER;
 
 static bool ready = false;
+static bool exiting = false;
 
 static snd_seq_t *alsaSeqHandle = 0;
 static int notesOn[128];
@@ -252,7 +253,8 @@ jackProcess(jack_nframes_t nframes, void *arg)
 
     if (sizeof(float) != sizeof(jack_default_audio_sample_t)) {
 	fprintf(stderr, "ERROR: The JACK audio sample type is not \"float\"; can't proceed\n");
-	bail(0);
+	exiting = true;
+	return 0;
     }
 
     for (int i = 0; i < jackData.input_count; ++i) {
@@ -262,6 +264,10 @@ jackProcess(jack_nframes_t nframes, void *arg)
     for (int i = 0; i < jackData.output_count; ++i) {
 	jackData.output_buffers[i] = (float *)jack_port_get_buffer
 	    (jackData.output_ports[i], jackData.buffer_size);
+    }
+
+    if (exiting) {
+	return 0;
     }
 
     if (!ready || pthread_mutex_trylock(&pluginMutex)) {
@@ -319,11 +325,11 @@ jackProcess(jack_nframes_t nframes, void *arg)
 	plugin->process(jackData.input_buffers, jackData.output_buffers);
     } catch (RemotePluginClosedException) {
 	pthread_mutex_unlock(&pluginMutex);
-	bail(0);
+	exiting = true;
+	return 0;
     }
 
     pthread_mutex_unlock(&pluginMutex);
-
     return 0;      
 }
 
@@ -451,6 +457,7 @@ closeJack()
     }
 
     jack_client_close(jackData.client);
+
     jackData.client = 0;
 }
 
@@ -554,14 +561,16 @@ main(int argc, char **argv)
 	snd_seq_poll_descriptors(alsaSeqHandle, pfd, npfd, POLLIN);
 	
 	while (1) {
-	    if (poll(pfd, npfd, 100000) > 0) {
+	    if (poll(pfd, npfd, 1000) > 0) {
 		alsaSeqCallback(alsaSeqHandle);
-	    }  
+	    }
+	    if (exiting) bail(0);
 	}
     } else {
 
 	while (1) {
-	    sleep (1000);
+	    sleep (1);
+	    if (exiting) bail(0);
 	}
     }
 }

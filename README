@@ -5,7 +5,7 @@ dssi-vst: a DSSI plugin wrapper for VST plugins
 This is a DSSI plugin wrapper for VST effects and instruments with GUI
 support.  Copyright (c) 2004 Chris Cannam.
 
-This is the 0.3 release of dssi-vst.  The main improvement since the
+This is the 0.3.1 release of dssi-vst.  The main improvement since the
 initial 0.1 release is that dssi-vst now works correctly with VSTs
 that have complex GUIs using back-channels to communicate things like
 patch information to the audio plugin.
