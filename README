@@ -20,19 +20,39 @@ Source files:
   the actual DSSI plugin.  Mostly for test purposes, this does nothing you
   can't already do better with vstserver or jack_fst.
 
-Copyright (c) 2004 Chris Cannam.  dssi-vst does not use any code from
-vstserver or libfst.  It requires recent Wine, liblo, and the VST SDK
-headers to build.  Once you have these, edit Makefile.in to specify
-the VST SDK location; then you should be able to build and install by
-running autoconf ; ./configure ; make ; make install.
+Copyright (c) 2004 Chris Cannam.
 
-To run: make sure DSSI_PATH is set appropriately, set VST_PATH to a
-colon-separated list of the directories containing VST plugins, and
-load the plugin into your DSSI host.  The plugin soname is
-dssi-vst.so, and each VST plugin gets a label corresponding to its DLL
-name.  So for example, with dssi_example_host, you should be able to
-just run dssi_example_host dssi-vst.so MyVstPlugin.dll.  (dssi-vst
-does not handle multiple VST plugins in a single DLL.)
+
+Build etc
+---------
+
+To build dssi-vst, you will need:
+
+* A reasonably recent version of Wine (anything from the start of 2004
+  onwards is probably OK) -- http://www.winehq.com/
+
+* Steve Harris's liblo "Lite OSC" library -- http://liblo.sf.net/.
+  You will need version 0.6 or newer, but unfortunately versions 0.6-0.8
+  contain a serious bug that prevents DSSI GUI startup from working.  So
+  look out for 0.9 (not actually released at the time of writing!)
+
+* The VST SDK headers -- http://www.steinberg.net/steinberg/ygrabit/index.html
+  These are free but not redistributable.
+
+Once you have all of the above, edit Makefile.in to specify the VST
+SDK location; then you should be able to build and install by running
+autoconf ; ./configure ; make ; make install.
+
+To use dssi-vst: make sure DSSI_PATH is set appropriately, set
+VST_PATH to a colon-separated list of the directories containing VST
+plugins, and start up your DSSI host.
+
+The plugin soname is dssi-vst.so, and each VST plugin gets a label
+corresponding to its DLL name.  So for example, with
+dssi_example_host, you should be able to just run dssi_example_host
+dssi-vst.so MyVstPlugin.dll.
+
+NB: dssi-vst does not handle multiple VST plugins in a single DLL.
 
 
 Why not use vstserver or libfst?
@@ -123,11 +143,39 @@ Bad points:
 Licence
 -------
 
-Basically GPL, but I guess we need an exception for the VST SDK
-headers.  This code uses liblo, which is under the GPL without any
-such exception, so I'm evidently going to have to think a bit harder
-about this.  *sigh*  For now I advise against distributing it at all...
+My usual preference would be to offer dssi-vst under the GNU GPL.
+However, it is my personal belief that GPL'd code that makes use of
+the Steinberg VST SDK header files cannot be distributed without
+violating either the GPL or at least one of the copyright or licensing
+terms for the Steinberg header files.  So I am offering this code
+under the following terms:
 
+You may distribute and/or modify dssi-vst under the terms of version 2
+of the GNU General Public License as published by the Free Software
+Foundation, except that you are hereby permitted to omit the source
+code to the two VST SDK header files AEffect.h and aeffectx.h (the
+source code of which would otherwise be required by section 3 of the
+GPL) when redistributing dssi-vst.  The full terms of the GPL continue
+to apply to all of the remaining source code for dssi-vst.
 
 Chris Cannam
 cannam@all-day-breakfast.com
+
+
+Licence for liblo
+-----------------
+
+dssi-vst makes use of the liblo library by Steve Harris, which is
+provided under the GPL.  Steve Harris has provided the following
+exemption to permit the liblo library to be used with dssi-vst:
+
+You are hereby permitted to omit the source code to the two VST SDK
+header files AEffect.h and aeffectx.h (the source code of which would
+otherwise be required by section 3 of the GPL) when redistributing any
+version of dssi-vst which uses liblo.  This offer does not imply any
+exemption to the GPL for the liblo code itself or the remainder of
+dssi-vst, nor to any other derived work that may use liblo.
+
+Steve Harris
+steve <at> plugin <dot> org <dot> uk
+
