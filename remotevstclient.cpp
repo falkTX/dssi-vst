@@ -14,6 +14,8 @@
 #include <iostream>
 #include <dirent.h>
 #include <unistd.h>
+#include <sys/types.h>
+#include <sys/wait.h>
 
 #include "rdwrops.h"
 #include "paths.h"
@@ -89,6 +91,10 @@ RemoteVSTClient::RemoteVSTClient(std::string dllName, bool showGUI) :
 
 RemoteVSTClient::~RemoteVSTClient()
 {
+    for (int i = 0; i < 3; ++i) {
+	if (waitpid(-1, NULL, WNOHANG)) break;
+	sleep(1);
+    }
 }
 
 void
@@ -216,8 +222,9 @@ RemoteVSTClient::queryPlugins(std::vector<PluginRecord> &plugins)
     pfd.fd = fd;
     pfd.events = POLLIN;
     int sec;
+    int timeout = 15;
 
-    for (sec = 0; sec < 6; ++sec) {
+    for (sec = 0; sec < timeout; ++sec) {
 
 	int rv = poll(&pfd, 1, 1000);
 
@@ -236,7 +243,7 @@ RemoteVSTClient::queryPlugins(std::vector<PluginRecord> &plugins)
 	}
     }
 
-    if (sec >= 6) {
+    if (sec >= timeout) {
 	close(fd);
 	unlink(fifoFile);
 	throw ((std::string)"Plugin scanner timed out on startup.");
@@ -308,5 +315,10 @@ RemoteVSTClient::queryPlugins(std::vector<PluginRecord> &plugins)
 
     close(fd);
     unlink(fifoFile);
+
+    for (int i = 0; i < 3; ++i) {
+	if (waitpid(-1, NULL, WNOHANG)) break;
+	sleep(1);
+    }
 }
 

@@ -105,8 +105,9 @@ RemotePluginClient::syncStartup()
     // for this and the process fd anyway.
 
     bool connected = false;
+    int timeout = 15;
 
-    for (int attempt = 0; attempt < 6; ++attempt) {
+    for (int attempt = 0; attempt < timeout; ++attempt) {
 
 	if ((m_controlRequestFd =
 	     open(m_controlRequestFileName, O_WRONLY | O_NONBLOCK)) >= 0) {

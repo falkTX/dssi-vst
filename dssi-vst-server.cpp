@@ -249,6 +249,7 @@ RemoteVSTServer::reset()
 void
 RemoteVSTServer::terminate()
 {
+    cerr << "RemoteVSTServer::terminate: setting exiting flag" << endl;
     exiting = true;
 }
 
@@ -701,6 +702,7 @@ AudioThreadMain(LPVOID parameter)
 	}
 
 	if (exiting) {
+	    cerr << "Remote VST plugin audio thread: returning" << endl;
 	    param.sched_priority = 0;
 	    (void)sched_setscheduler(0, SCHED_OTHER, &param);
 	    return 0;
@@ -977,9 +979,16 @@ WinMain(HINSTANCE hInst, HINSTANCE hPrevInst, LPSTR cmdline, int cmdshow)
 
     MSG msg;
     exiting = false;
-    while (GetMessage(&msg, 0, 0, 0)) {
-	DispatchMessage(&msg);
-	if (exiting) break;
+    while (!exiting) {
+	if (PeekMessage(&msg, 0, 0, 0, PM_REMOVE)) {
+	    DispatchMessage(&msg);
+	} else {
+	    if (tryGui) {
+		usleep(10000);
+	    } else {
+		sleep(1);
+	    }
+	}
     }
 
     if (debugLevel > 0) {

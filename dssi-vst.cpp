@@ -342,8 +342,6 @@ DSSIVSTPluginInstance::runSynth(unsigned long sampleCount,
 
 		if (index >= MIDI_BUFFER_SIZE - 4) break;
 
-		std::cout << "DSSIVSTPluginInstance::runSynth: event at offset " << ev->time.tick << std::endl;
-
 		m_frameOffsetsBuffer[i] = ev->time.tick;
 		
 		long count = snd_midi_event_decode(m_alsaDecoder,
