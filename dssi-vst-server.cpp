@@ -1086,6 +1086,7 @@ MainProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
     switch (msg) {
     case WM_DESTROY:
 	remoteVSTServerInstance->terminateGUIProcess();
+	guiVisible = false;
 	return 0;
     }
 
@@ -1353,6 +1354,11 @@ WinMain(HINSTANCE hInst, HINSTANCE hPrevInst, LPSTR cmdline, int cmdshow)
 
 	while (!exiting && PeekMessage(&msg, 0, 0, 0, PM_REMOVE)) {
 	    DispatchMessage(&msg);
+	}
+
+	if (tryGui && haveGui && !guiVisible) {
+	    // Running in GUI-always-on mode and GUI has exited: follow it
+	    exiting = true;
 	}
 
 	if (exiting) break;

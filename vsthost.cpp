@@ -59,8 +59,14 @@ void closeJack();
 void
 bail(int sig)
 {
+    static bool bailing = false;
+
     // can't call pthread_mutex functions safely from a signal handler
-    // -- this means we don't get a mutex lock in closeJack either
+    // -- this means we don't get a mutex lock in closeJack either.
+    // Do this safer but still racy thing:
+
+    if (bailing) return;
+    bailing = true;
 
     if (sig != 0) {
 	fprintf(stderr, "vsthost: signal %d received, exiting\n", sig);
@@ -309,7 +315,12 @@ jackProcess(jack_nframes_t nframes, void *arg)
 	midiReadIndex = wi;
     }	
 
-    plugin->process(jackData.input_buffers, jackData.output_buffers);
+    try {
+	plugin->process(jackData.input_buffers, jackData.output_buffers);
+    } catch (RemotePluginClosedException) {
+	pthread_mutex_unlock(&pluginMutex);
+	bail(0);
+    }
 
     pthread_mutex_unlock(&pluginMutex);
 

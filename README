@@ -2,31 +2,21 @@
 dssi-vst: a DSSI plugin wrapper for VST plugins
 ===============================================
 
-This is a provisional implementation of a DSSI plugin wrapper for VST
-effects and instruments with GUI support.
+This is a DSSI plugin wrapper for VST effects and instruments with GUI
+support.  Copyright (c) 2004 Chris Cannam.
 
-Source files:
-
-* dssi-vst.cpp: DSSI plugin implementation
-* dssi-vst_gui.cpp: DSSI plugin GUI process implementation
-* dssi-vst-scanner.cpp: Program that determines what VSTs you have (a bit
-  like fstconfig in the fst package) and communicates it back to the plugin
-* dssi-vst-server.cpp: Program that hosts a single VST with a comms link
-  to the plugin (a bit like a less general version of Kjetil's vstserver)
-* rdwrops.cpp, paths.cpp: misc functions
-* remotepluginclient.cpp/remotepluginserver.cpp: Code to handle process
-  separation for audio plugin (not VST specific), used by DSSI plugin & server
-* vstsyth.cpp: JACK/aseq host for VSTs using dssi-vst-server, but not using
-  the actual DSSI plugin.  Mostly for test purposes, this does nothing you
-  can't already do better with vstserver or jack_fst.
-
-Copyright (c) 2004 Chris Cannam.
+This is the 0.3 release of dssi-vst.  The main improvement since the
+initial 0.1 release is that dssi-vst now works correctly with VSTs
+that have complex GUIs using back-channels to communicate things like
+patch information to the audio plugin.
 
 
 Build etc
 ---------
 
 To build dssi-vst, you will need:
+
+* The dssi.h header.
 
 * A reasonably recent version of Wine (anything from the start of 2004
   onwards is probably OK) -- http://www.winehq.com/
@@ -47,10 +37,41 @@ plugins, and start up your DSSI host.
 
 The plugin soname is dssi-vst.so, and each VST plugin gets a label
 corresponding to its DLL name.  So for example, with
-dssi_example_host, you should be able to just run dssi_example_host
-dssi-vst.so MyVstPlugin.dll.
+jack-dssi-host, you should be able to just run
 
-NB: dssi-vst does not handle multiple VST plugins in a single DLL.
+   jack-dssi-host dssi-vst.so:MyVstPlugin.dll
+
+Source files:
+
+* dssi-vst.cpp: DSSI plugin implementation
+* dssi-vst_gui.cpp: DSSI plugin GUI process implementation
+* dssi-vst-scanner.cpp: Program that determines what VSTs you have and
+  communicates that to the plugin
+* dssi-vst-server.cpp: Program that hosts a single VST with a comms link
+  to the plugin
+* rdwrops.cpp, paths.cpp: misc functions
+* remotepluginclient.cpp/remotepluginserver.cpp: Code to handle process
+  separation for audio plugin (not VST specific), used by DSSI plugin & server
+* vsthost.cpp: JACK/aseq host for VSTs using dssi-vst-server, but not using
+  the actual DSSI plugin. 
+
+
+Bugs and limitations
+--------------------
+
+Does not handle multiple VST plugins in a single DLL.
+
+Does not handle multi-channel support correctly yet.  DSSI does not
+use MIDI channels, so dssi-vst should permit separate instances
+delivering to separate VST MIDI channels using run_multiple_synths to
+share the VST plugin.
+
+Does not communicate tempo and beat information to the VST plugin (the
+VST API has a mechanism for this, but DSSI does not).
+
+Has a tendency to leave FIFOs and shared-memory files lying around in
+the temporary directory (/tmp or /var/tmp).  You may want to go and
+remove anything starting with "rplugin_" occasionally...
 
 
 Why not use vstserver or libfst?
@@ -65,30 +86,14 @@ this code quite a while ago as an exercise, and I've just got used to
 my own code.  Architecturally dssi-vst is like vstserver in that it
 runs the VST plugin in a separate process and communicates with it via
 some IPC mechanism (here shared memory and POSIX FIFOs, in vstserver
-shared memory and Unix domain sockets).  The big difference is that
-dssi-vst spawns a separate process per plugin rather than using a
-single server, so it's likely to use more resources.  A vstserver
-alternative (perhaps just a DSSI extension to vstserver's ladspavst)
-might be a better thing, and if you think so, I encourage you to make
-one.  The GUI part of dssi-vst should work with ladspavst or something
-based on it already, with a small adjustment to accommodate the fact
-that dssi-vst and ladspavst order their ports differently (dssi-vst
-has control ports first, ladspavst has audio ports first).
+shared memory and Unix domain sockets).
 
-These are some of the theoretical good points of dssi-vst's
-architecture:
+Good points of dssi-vst:
 
 * Bugs in dssi-vst aside, it ought to be impossible for a misbehaving
-  VST plugin to crash its host, for a misbehaving plugin GUI to
-  disrupt either the host or the audio part of the plugin (because
-  the GUI and audio parts are in separate processes), or for one
-  misbehaving plugin or plugin GUI to disrupt another.  It's therefore
-  theoretically possible for dssi-vst to be more stable for audio use
-  than either an fst host or vstserver.
-
-* Because there is no real audio work done in the GUI process and
-  no requirement for an audio thread, the GUI code is less likely to
-  experience problems from thread mismanagement.
+  VST plugin to crash its host.  It's therefore theoretically possible
+  for dssi-vst to be more stable for audio use than an fst host.
+  (The same is true of vstserver.)
 
 * DSSI provides a closer match to the VST feature set than LADSPA
   does -- apart from the synth stuff, this plugin handles VST programs
@@ -99,41 +104,23 @@ architecture:
   without having to know anything about VST or to have a code (or
   licence) dependency on the VST SDK, which is not the case with fst.
 
-* Marginally simpler than vstserver to use, because you don't have to
-  start the server yourself.
-
 Bad points:
 
 * Processes everywhere.  Besides your host process, you get a
   server process to do the actual audio processing, a scanner
-  process to identify the available VST plugins, and a GUI process
-  to run the GUI -- and all of these are winelib applications that
-  are run under Wine.  dssi-vst is useful for running the odd synth
-  or effect on a fast machine, not for doing all your effects work.
-
-* A plugin with a visible GUI actually has to be instantiated twice.
-  The GUI instantiation doesn't do real audio processing work,
-  and it isn't created unless you actually want to see the GUI, but
-  this is still wasteful of resources.
-
-* Any VST GUI that uses its own back channel to communicate
-  directly with the plugin will fail, because there's no way to
-  intercept this information, which is necessary for the DSSI GUI
-  separation model.  The most obvious example where this causes
-  failures is for synth plugins with miniature keyboards or test
-  buttons built into their GUIs: these gizmos cannot work with
-  dssi-vst, although that doesn't usually prevent the plugin
-  itself from working.  More complex plugins with complex GUIs
-  that do patch management in the plugin GUI also suffer, though
-  they might be better run as standalone jack_fst applications
-  plumbed into the JACK graph anyway.
+  process to identify the available VST plugins, and a GUI process.
+  All of these except the GUI process (which in fact does nothing
+  except send information around between the other processes) are
+  winelib applications that are run under Wine.  dssi-vst is useful
+  for running the odd synth or effect on a fast machine, not for
+  doing all your effects work.
 
 * It's hard to make sure things like the communications FIFOs are
   tidied up when exiting.  Apart from anything else it requires
   that the host call cleanup() on its plugins when exiting from
-  ctrl-C or whatever.  The vstserver model can cope better with
-  this by having the server take ownership of such resources
-  instead of the DSSI plugin.
+  ctrl-C or whatever.  A model with a server shared among many
+  plugins would cope better with this by having the server take
+  ownership of such resources instead of the DSSI plugin.
 
 * The comms model dssi-vst uses introduces a fixed latency equal to
   the JACK period size, as well as any existing latency in the VST
