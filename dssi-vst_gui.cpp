@@ -30,12 +30,10 @@
 #define APPLICATION_CLASS_NAME "dssi_vst"
 #define PLUGIN_ENTRY_POINT "main"
 
-//!!!static bool inProcessThread = false;
 static bool exiting = false;
 static HWND hWnd = 0;
 static double currentSamplePosition = 0.0;
 
-static bool ready = false;
 static int bufferSize = 0;
 static int sampleRate = 0;
 
@@ -161,12 +159,7 @@ hostCallback(AEffect *plugin, long opcode, long index,
 	return 1;
 
     case audioMasterGetCurrentProcessLevel:
-	if (debugLevel > 1) {
-//!!!	    cerr << "dssi-vst_gui[2]: audioMasterGetCurrentProcessLevel requested (level is " << (inProcessThread ? 2 : 1) << ")" << endl;
-	}
 	// 0 -> unsupported, 1 -> gui, 2 -> process, 3 -> midi/timer, 4 -> offline
-//!!!	if (inProcessThread) return 2;
-//!!!	else return 1;
 	return 2;
 
     case audioMasterGetParameterQuantization:
@@ -209,47 +202,6 @@ hostCallback(AEffect *plugin, long opcode, long index,
 
     return 0;
 };
-
-DWORD WINAPI
-AudioThreadMain(LPVOID parameter)
-{
-    float **inputs, **outputs;
-
-    if (plugin && plugin->numInputs > 0) {
-	inputs = new float *[plugin->numInputs];
-	for (int i = 0; i < plugin->numInputs; ++i) {
-	    inputs[i] = new float[1024];
-	}
-    } else {
-	inputs = 0;
-    }
-
-    if (plugin && plugin->numOutputs > 0) {
-	outputs = new float *[plugin->numOutputs];
-	for (int i = 0; i < plugin->numOutputs; ++i) {
-	    outputs[i] = new float[1024];
-	}
-    } else {
-	outputs = 0;
-    }
-
-    while (1) {
-
-	lo_server_recv_noblock(oscserver, 30);
-	
-	if (plugin) plugin->processReplacing(plugin, inputs, outputs, 1024);
-
-	    //!!!
-//	    if (plugin) plugin->processReplacing(plugin, inputs, outputs, 1024);
-//	    remoteVSTServerInstance->dispatch();
-	
-	//!!! need to at least maintain the pretence of running the thing
-
-	usleep(30); //!!!
-
-	if (exiting) return 0;
-    }
-}
 
 LRESULT WINAPI
 MainProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
@@ -301,8 +253,6 @@ program_handler(const char *path, const char *types, lo_arg **argv,
 
     const int bank = argv[0]->i;
     const int program = argv[1]->i;
-
-    //!!! wrong thread I think -- queue these
 
     cerr << "program_handler(" << bank << "," << program << ")" << endl;
 
@@ -373,8 +323,6 @@ control_handler(const char *path, const char *types, lo_arg **argv,
     const int port = argv[0]->i;
     const float value = argv[1]->f;
 
-    //!!! wrong thread I think -- queue these
-
     cerr << "control_handler(" << port << "," << value << ")" << endl;
 
     plugin->setParameter(plugin, port, value);
@@ -425,9 +373,16 @@ WinMain(HINSTANCE hInst, HINSTANCE hPrevInst, LPSTR cmdline, int cmdshow)
 	!pluginlibname || !pluginlibname[0] ||
 	!label || !label[0] ||
 	!friendlyname || !friendlyname[0]) {
-	cerr << "Usage: dssi-vst_gui <oscurl> <plugin.so> <label> <friendlyname>" << endl;
+	cerr << "Usage: dssi-vst_gui <oscurl>,<plugin.so>,<label>,<friendlyname>" << endl;
 	cerr << "(Command line was: " << cmdline << ")" << endl;
 	exit(2);
+    }
+
+    // LADSPA labels can't contain spaces (good thing too, as they'd
+    // confuse our command line parsing above!) so dssi-vst replaces
+    // spaces with asterisks.
+    for (int ci = 0; label[ci]; ++ci) {
+	if (label[ci] == '*') label[ci] = ' ';
     }
 
     char *libname = label; // VST libname is in label, DSSI libname in pluginlibname
@@ -435,7 +390,6 @@ WinMain(HINSTANCE hInst, HINSTANCE hPrevInst, LPSTR cmdline, int cmdshow)
     cout << "Loading \"" << libname << "\"... ";
     if (debugLevel > 0) cout << endl;
 
-//    char libPath[1024];
     HINSTANCE libHandle = 0;
 
     std::vector<std::string> vstPath = Paths::getPath
@@ -474,77 +428,6 @@ WinMain(HINSTANCE hInst, HINSTANCE hPrevInst, LPSTR cmdline, int cmdshow)
 	if (libHandle) break;
     }	
 
-#ifdef NOT_DEFINED	
-
-    char *vstDir = getenv("VSTI_DIR");
-
-    if (vstDir) {
-	if (vstDir[strlen(vstDir) - 1] == '/') {
-	    snprintf(libPath, 1024, "%s%s", vstDir, libname);
-	} else {
-	    snprintf(libPath, 1024, "%s/%s", vstDir, libname);
-	}
-	std::string libpathstr(libPath);
-
-	if (home && home[0] != '\0') {
-	    if (libpathstr.substr(0, strlen(home)) == std::string(home)) {
-		libpathstr = libpathstr.substr(strlen(home) + 1);
-	    }
-	}
-
-	libHandle = LoadLibrary(libpathstr.c_str());
-
-	libHandle = LoadLibrary(libPath);
-	if (debugLevel > 0) {
-	    cerr << "dssi-vst_gui[1]: " << (libHandle ? "" : "not ")
-		 << "found in " << vstDir << " (from $VSTI_DIR)" << endl;
-	}
-    } else if (debugLevel > 0) {
-	cerr << "dssi-vst_gui[1]: $VSTI_DIR not set" << endl;
-    }
-
-    std::cerr << "home is " << getenv("HOME") << std::endl;
-
-    if (!libHandle) {
-	vstDir = getenv("VST_DIR");
-	if (vstDir) {
-	    snprintf(libPath, 1024, "%s/%s", vstDir, libname);
-	    std::string libpathstr(libPath);
-
-	    if (home && home[0] != '\0') {
-		if (libpathstr.substr(0, strlen(home)) == std::string(home)) {
-		    libpathstr = libpathstr.substr(strlen(home) + 1);
-		}
-	    }
-	    
-	    libHandle = LoadLibrary(libpathstr.c_str());
-
-	    if (debugLevel > 0) {
-		cerr << "dssi-vst_gui[1]: " << (libHandle ? "" : "not ")
-		     << "found in " << libPath << " (from $VST_DIR)" << endl;
-
-		LPVOID lpMsgBuf;
-		if (FormatMessage( 
-			FORMAT_MESSAGE_ALLOCATE_BUFFER | 
-			FORMAT_MESSAGE_FROM_SYSTEM | 
-			FORMAT_MESSAGE_IGNORE_INSERTS,
-			NULL,
-			GetLastError(),
-			MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT), // Default language
-			(LPTSTR) &lpMsgBuf,
-			0,
-			NULL )) {
-		    std::cerr << (const char *)lpMsgBuf << std::endl;
-		}
-
-		LocalFree( lpMsgBuf );
-	    }
-	} else if (debugLevel > 0) {
-	    cerr << "dssi-vst_gui[1]: $VST_DIR not set" << endl;
-	}
-    }
-#endif
-
     if (!libHandle) {
 	libHandle = LoadLibrary(libname);
 	if (debugLevel > 0) {
@@ -554,8 +437,9 @@ WinMain(HINSTANCE hInst, HINSTANCE hPrevInst, LPSTR cmdline, int cmdshow)
     }
 
     if (!libHandle) {
-	cerr << "dssi-vst_gui: ERROR: Couldn't load VST DLL \"" << libname << "\"" << endl;
-	//!!! pop up an error dialog
+	std::string message = std::string("Failed to load VST DLL \"") + libname + "\"";
+	cerr << "dssi-vst_gui: ERROR: " << message << endl;
+	MessageBox(NULL, message.c_str(), NULL, MB_OK);
 	return 1;
     }
 
@@ -571,9 +455,10 @@ WinMain(HINSTANCE hInst, HINSTANCE hPrevInst, LPSTR cmdline, int cmdshow)
 	GetProcAddress(libHandle, PLUGIN_ENTRY_POINT);
 
     if (!getInstance) {
-	cerr << "dssi-vst_gui: ERROR: VST entrypoint \"" << PLUGIN_ENTRY_POINT
-	     << "\" not found in DLL \"" << libname << "\"" << endl;
-	//!!! pop up an error dialog
+	std::string message = std::string("Bad VST DLL \"") + libname + "\" (entrypoint \""
+	    + PLUGIN_ENTRY_POINT + "\" not found)";
+	cerr << "dssi-vst_gui: ERROR: " << message << endl;
+	MessageBox(NULL, message.c_str(), NULL, MB_OK);
 	return 1;
     } else if (debugLevel > 0) {
 	cerr << "dssi-vst_gui[1]: VST entrypoint \"" << PLUGIN_ENTRY_POINT
@@ -591,18 +476,19 @@ WinMain(HINSTANCE hInst, HINSTANCE hPrevInst, LPSTR cmdline, int cmdshow)
     }
 
     if (plugin->magic != kEffectMagic) {
-	cerr << "dssi-vst_gui: ERROR: Not a VST effect in DLL \"" << libname << "\"" << endl;
+	cerr << "dssi-vst_gui: ERROR: Not a VST plugin in DLL \"" << libname << "\"" << endl;
 	return 1;
     } else if (debugLevel > 0) {
 	cerr << "dssi-vst_gui[1]: plugin is a VST" << endl;
     }
 
     if (!(plugin->flags & effFlagsHasEditor)) {
-	cerr << "dssi-vst_gui: ERROR: Instrument has no GUI (required)" << endl;
-	//!!! pop up an error dialog
+	std::string message = "No GUI available for this plugin";
+	cerr << "dssi-vst_gui: ERROR: " << message << endl;
+	MessageBox(NULL, message.c_str(), NULL, MB_OK);
 	return 1;
     } else if (debugLevel > 0) {
-	cerr << "dssi-vst_gui[1]: synth has a GUI" << endl;
+	cerr << "dssi-vst_gui[1]: plugin has a GUI" << endl;
     }
 
     cout << "Initialising Windows subsystem... ";
@@ -684,32 +570,54 @@ WinMain(HINSTANCE hInst, HINSTANCE hPrevInst, LPSTR cmdline, int cmdshow)
 	    "s",
 	    (std::string(lo_server_get_url(oscserver)) + "dssi").c_str());
 
-    DWORD threadId = 0;
-    HANDLE threadHandle = CreateThread(0, 0, AudioThreadMain, 0, 0, &threadId);
-    if (!threadHandle) {
-	cerr << "Failed to create audio thread!" << endl;
-	return 1; //!!!tidy
-    } else if (debugLevel > 0) {
-	cerr << "dssi-vst_gui[1]: created audio thread" << endl;
+    float **inputs, **outputs;
+
+    if (plugin && plugin->numInputs > 0) {
+	inputs = new float *[plugin->numInputs];
+	for (int i = 0; i < plugin->numInputs; ++i) {
+	    inputs[i] = new float[1024];
+	}
+    } else {
+	inputs = 0;
     }
 
-    ready = true;
+    if (plugin && plugin->numOutputs > 0) {
+	outputs = new float *[plugin->numOutputs];
+	for (int i = 0; i < plugin->numOutputs; ++i) {
+	    outputs[i] = new float[1024];
+	}
+    } else {
+	outputs = 0;
+    }
 
     MSG msg;
     exiting = false;
+    int count = 0;
 
-    while (GetMessage(&msg, 0, 0, 0)) {
-	DispatchMessage(&msg);
-	if (exiting) break;
+    while (!exiting) {
+
+	bool idle = true;
+	
+	if (PeekMessage(&msg, 0, 0, 0, PM_REMOVE)) {
+	    DispatchMessage(&msg);
+	    idle = false;
+	}
+
+	if (lo_server_recv_noblock(oscserver, idle ? 30 : 0)) {
+	    idle = false;
+	}
+
+	++count;
+
+	if (idle || count == 50) {
+	    plugin->processReplacing(plugin, inputs, outputs, 1024);
+	    usleep(50);
+	    count = 0;
+	}
     }
 
     if (debugLevel > 0) {
 	cerr << "dssi-vst_gui[1]: cleaning up" << endl;
-    }
-
-    CloseHandle(threadHandle);
-    if (debugLevel > 0) {
-	cerr << "dssi-vst_gui[1]: closed audio thread" << endl;
     }
 
     FreeLibrary(libHandle);

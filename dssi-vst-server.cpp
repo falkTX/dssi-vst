@@ -525,13 +525,16 @@ WinMain(HINSTANCE hInst, HINSTANCE hPrevInst, LPSTR cmdline, int cmdshow)
 	exit(2);
     }
 
+    // LADSPA labels can't contain spaces so dssi-vst replaces spaces
+    // with asterisks.
+    for (int ci = 0; libname[ci]; ++ci) {
+	if (libname[ci] == '*') libname[ci] = ' ';
+    }
+
     cout << "Loading \"" << libname << "\"... ";
     if (debugLevel > 0) cout << endl;
 
-//    char libPath[1024];
     HINSTANCE libHandle = 0;
-
-
 
     std::vector<std::string> vstPath = Paths::getPath
 	("VST_PATH", "/usr/local/lib/vst:/usr/lib/vst", "/vst");
@@ -569,80 +572,6 @@ WinMain(HINSTANCE hInst, HINSTANCE hPrevInst, LPSTR cmdline, int cmdshow)
 	if (libHandle) break;
     }	
 
-#ifdef NOT_DEFINED
-
-
-
-    char *vstDir = getenv("VSTI_DIR");
-
-    if (vstDir) {
-	if (vstDir[strlen(vstDir) - 1] == '/') {
-	    snprintf(libPath, 1024, "%s%s", vstDir, libname);
-	} else {
-	    snprintf(libPath, 1024, "%s/%s", vstDir, libname);
-	}
-	std::string libpathstr(libPath);
-
-	if (home && home[0] != '\0') {
-	    if (libpathstr.substr(0, strlen(home)) == std::string(home)) {
-		libpathstr = libpathstr.substr(strlen(home) + 1);
-	    }
-	}
-
-	libHandle = LoadLibrary(libpathstr.c_str());
-
-	libHandle = LoadLibrary(libPath);
-	if (debugLevel > 0) {
-	    cerr << "dssi-vst-server[1]: " << (libHandle ? "" : "not ")
-		 << "found in " << vstDir << " (from $VSTI_DIR)" << endl;
-	}
-    } else if (debugLevel > 0) {
-	cerr << "dssi-vst-server[1]: $VSTI_DIR not set" << endl;
-    }
-
-    std::cerr << "home is " << getenv("HOME") << std::endl;
-
-    if (!libHandle) {
-	vstDir = getenv("VST_DIR");
-	if (vstDir) {
-	    snprintf(libPath, 1024, "%s/%s", vstDir, libname);
-	    std::string libpathstr(libPath);
-
-	    if (home && home[0] != '\0') {
-		if (libpathstr.substr(0, strlen(home)) == std::string(home)) {
-		    libpathstr = libpathstr.substr(strlen(home) + 1);
-		}
-	    }
-	    
-	    libHandle = LoadLibrary(libpathstr.c_str());
-
-	    if (debugLevel > 0) {
-		cerr << "dssi-vst-server[1]: " << (libHandle ? "" : "not ")
-		     << "found in " << libPath << " (from $VST_DIR)" << endl;
-
-		LPVOID lpMsgBuf;
-		if (FormatMessage( 
-			FORMAT_MESSAGE_ALLOCATE_BUFFER | 
-			FORMAT_MESSAGE_FROM_SYSTEM | 
-			FORMAT_MESSAGE_IGNORE_INSERTS,
-			NULL,
-			GetLastError(),
-			MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT), // Default language
-			(LPTSTR) &lpMsgBuf,
-			0,
-			NULL )) {
-		    std::cerr << (const char *)lpMsgBuf << std::endl;
-		}
-
-		LocalFree( lpMsgBuf );
-	    }
-	} else if (debugLevel > 0) {
-	    cerr << "dssi-vst-server[1]: $VST_DIR not set" << endl;
-	}
-    }
-
-#endif
-
     if (!libHandle) {
 	libHandle = LoadLibrary(libname);
 	if (debugLevel > 0) {
@@ -663,8 +592,6 @@ WinMain(HINSTANCE hInst, HINSTANCE hPrevInst, LPSTR cmdline, int cmdshow)
 
 //!!! better debug level support
     
-    //!!! look for _main as well?
-
     AEffect *(__stdcall* getInstance)(audioMasterCallback);
     getInstance = (AEffect*(__stdcall*)(audioMasterCallback))
 	GetProcAddress(libHandle, PLUGIN_ENTRY_POINT);
@@ -689,7 +616,7 @@ WinMain(HINSTANCE hInst, HINSTANCE hPrevInst, LPSTR cmdline, int cmdshow)
     }
 
     if (plugin->magic != kEffectMagic) {
-	cerr << "dssi-vst-server: ERROR: Not a VST effect in DLL \"" << libname << "\"" << endl;
+	cerr << "dssi-vst-server: ERROR: Not a VST plugin in DLL \"" << libname << "\"" << endl;
 	return 1;
     } else if (debugLevel > 0) {
 	cerr << "dssi-vst-server[1]: plugin is a VST" << endl;
@@ -697,19 +624,19 @@ WinMain(HINSTANCE hInst, HINSTANCE hPrevInst, LPSTR cmdline, int cmdshow)
 
 #ifdef SHOW_GUI
     if (!(plugin->flags & effFlagsHasEditor)) {
-	cerr << "dssi-vst-server: ERROR: Instrument has no GUI (required)" << endl;
+	cerr << "dssi-vst-server: ERROR: Plugin has no GUI (required)" << endl;
 	return 1;
     } else if (debugLevel > 0) {
-	cerr << "dssi-vst-server[1]: synth has a GUI" << endl;
+	cerr << "dssi-vst-server[1]: plugin has a GUI" << endl;
     }
 #endif
 
     if (!plugin->flags & effFlagsCanReplacing) {
-	cerr << "dssi-vst-server: ERROR: Instrument does not support processReplacing (required)"
+	cerr << "dssi-vst-server: ERROR: Plugin does not support processReplacing (required)"
 	     << endl;
 	return 1;
     } else if (debugLevel > 0) {
-	cerr << "dssi-vst-server[1]: synth supports processReplacing" << endl;
+	cerr << "dssi-vst-server[1]: plugin supports processReplacing" << endl;
     }
 
     try {
@@ -796,7 +723,9 @@ WinMain(HINSTANCE hInst, HINSTANCE hPrevInst, LPSTR cmdline, int cmdshow)
     HANDLE threadHandle = CreateThread(0, 0, AudioThreadMain, 0, 0, &threadId);
     if (!threadHandle) {
 	cerr << "Failed to create audio thread!" << endl;
-	return 1; //!!!tidy
+	delete remoteVSTServerInstance;
+	FreeLibrary(libHandle);
+	return 1;
     } else if (debugLevel > 0) {
 	cerr << "dssi-vst-server[1]: created audio thread" << endl;
     }

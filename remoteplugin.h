@@ -8,7 +8,7 @@
 #ifndef REMOTE_PLUGIN_H
 #define REMOTE_PLUGIN_H
 
-static const float RemotePluginVersion = 0.7;
+static const float RemotePluginVersion = 0.8;
 
 enum RemotePluginDebugLevel {
     RemotePluginDebugNone,

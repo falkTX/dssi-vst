@@ -206,24 +206,20 @@ RemoteVSTClient::queryPlugins(std::vector<PluginRecord> &plugins)
     }
 
     try {
-	unsigned long uniqueId;
 	char buffer[64];
 
 	while (1) {
 
+	    PluginRecord rec;
+	    
 	    try {
-		tryRead(fd, &uniqueId, sizeof(unsigned long));
+		tryRead(fd, buffer, 64);
+		rec.dllName = buffer;
 	    } catch (RemotePluginClosedException) {
 		// This is acceptable here; it just means we're done
 		break;
 	    }
 
-	    PluginRecord rec;
-	    rec.uniqueId = uniqueId;
-	    
-	    tryRead(fd, buffer, 64);
-	    rec.dllName = buffer;
-	    
 	    tryRead(fd, buffer, 64);
 	    rec.pluginName = buffer;
 	    

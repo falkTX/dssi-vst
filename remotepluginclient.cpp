@@ -101,7 +101,8 @@ RemotePluginClient::syncStartup()
 {
     // The first (write) fd we open in a nonblocking call, with a
     // short retry loop so we can easily give up if the other end
-    // doesn't appear to be responding
+    // doesn't appear to be responding.  We want a nonblocking FIFO
+    // for this and the process fd anyway.
 
     bool connected = false;
 
@@ -129,7 +130,7 @@ RemotePluginClient::syncStartup()
 	throw((std::string)"Failed to open FIFO");
     }
 
-    if ((m_processFd = open(m_processFileName, O_WRONLY)) < 0) {
+    if ((m_processFd = open(m_processFileName, O_WRONLY | O_NONBLOCK)) < 0) {
 	cleanup();
 	throw((std::string)"Failed to open FIFO");
     }
@@ -266,6 +267,9 @@ void
 RemotePluginClient::reset()
 {
     writeOpcode(m_controlRequestFd, RemotePluginReset);
+    if (m_shmSize > 0) {
+	memset(m_shm, 0, m_shmSize);
+    }
 }
 
 void
@@ -396,8 +400,8 @@ RemotePluginClient::process(float **inputs, float **outputs)
 
     size_t blocksz = m_bufferSize * sizeof(float);
 
-    //!!! put counter in shm to indicate number of blocks processed
-    //(so we know if we've screwed up)
+    //!!! put counter in shm to indicate number of blocks processed?
+    // (so we know if we've screwed up)
 
     // retrieve results of previous process() instead of waiting for this
     for (int i = 0; i < m_numOutputs; ++i) {

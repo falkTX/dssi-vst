@@ -246,9 +246,6 @@ RemotePluginServer::dispatchProcess()
 	std::cerr << "server: sendMIDIData length " << len << std::endl;
 	sendMIDIData(data, len);
     }
-
-    //!!! want to handle case where one of these is followed immediately
-    // by another -- i.e. continue reading (nonblocking)
 }
 
 void

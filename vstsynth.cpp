@@ -473,9 +473,6 @@ main(int argc, char **argv)
     sigaddset(&_signals, SIGUSR2);
     pthread_sigmask(SIG_BLOCK, &_signals, 0);
 
-    //!!! change references to synth back to plugin or something else?
-    // now that we do this:
-
     bool hasMIDI = plugin->hasMIDIInput();
 
     if (hasMIDI) {

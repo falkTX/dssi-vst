@@ -150,8 +150,6 @@ WinMain(HINSTANCE hInst, HINSTANCE hPrevInst, LPSTR cmdline, int cmdshow)
 	}
 
 	struct dirent *entry;
-	int count = 0;
-	
 	char *home = getenv("HOME");
 	std::string cacheDir = std::string(home) + "/.dssi-vst";
 	bool haveCacheDir = false;
@@ -173,7 +171,6 @@ WinMain(HINSTANCE hInst, HINSTANCE hPrevInst, LPSTR cmdline, int cmdshow)
 	    
 	    // For each plugin, we write:
 	    //
-	    // unique id (unsigned long)
 	    // dll name (64 chars)
 	    // name (64 chars)
 	    // vendor (64 chars)
@@ -287,9 +284,6 @@ WinMain(HINSTANCE hInst, HINSTANCE hPrevInst, LPSTR cmdline, int cmdshow)
 		    goto done;
 		}
 
-		uniqueId = 6666 + count;
-		write(fd, &uniqueId, sizeof(unsigned long));
-
 		memset(buffer, 0, 65);
 		snprintf(buffer, 64, "%s", libname.c_str());
 		write(fd, buffer, 64);
@@ -326,7 +320,6 @@ WinMain(HINSTANCE hInst, HINSTANCE hPrevInst, LPSTR cmdline, int cmdshow)
 		    memset(buffer, 0, 65);
 		    plugin->dispatcher(plugin, effGetParamName, i, 0, buffer, 0);
 		    write(fd, buffer, 64);
-		    //!!! do I need mains changed before this?:
 		    float f = plugin->getParameter(plugin, i);
 		    write(fd, &f, sizeof(float));
 		}
@@ -366,8 +359,6 @@ WinMain(HINSTANCE hInst, HINSTANCE hPrevInst, LPSTR cmdline, int cmdshow)
 		    close(fd);
 		}
 	    }
-
-	    ++count;
 	}
 
 	closedir(directory);

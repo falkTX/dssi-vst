@@ -62,6 +62,8 @@ protected:
     LADSPA_Data              **m_audioOuts;
     unsigned long              m_audioOutCount;
 
+    LADSPA_Data               *m_latencyOut;
+
     DSSI_Program_Descriptor  **m_programs;
     unsigned long              m_programCount;
 
@@ -161,7 +163,6 @@ DSSIVSTPluginInstance::DSSIVSTPluginInstance(std::string dllName,
 	    m_programs[i]->Name = strdup(m_plugin->getProgramName(i).c_str());
 	}
 
-	//!!! only if needed?
 	snd_midi_event_new(MIDI_BUFFER_SIZE, &m_alsaDecoder);
 	if (!m_alsaDecoder) {
 	    std::cerr << "DSSIVSTPluginInstance::DSSIVSTPluginInstance("
@@ -189,7 +190,9 @@ DSSIVSTPluginInstance::DSSIVSTPluginInstance(std::string dllName,
 DSSIVSTPluginInstance::~DSSIVSTPluginInstance()
 {
     if (m_ok) {
-	m_plugin->terminate();
+	try {
+	    m_plugin->terminate();
+	} catch (...) { }
     }
 
     delete m_plugin;
@@ -260,6 +263,14 @@ DSSIVSTPluginInstance::connectPort(unsigned long port, LADSPA_Data *location)
 	m_audioOuts[port] = location;
 	return;
     }
+    port -= m_audioOutCount;
+
+    if (port < 1) { // latency
+	std::cerr << "(latency output port)" << std::endl;
+	m_latencyOut = location;
+	if (m_latencyOut) *m_latencyOut = 0;
+	return;
+    }
 }
 
 const DSSI_Program_Descriptor *
@@ -275,7 +286,13 @@ DSSIVSTPluginInstance::selectProgram(unsigned long bank, unsigned long program)
 {
     if (bank != 0 || program >= m_programCount) return;
     m_plugin->setCurrentProgram(program);
-    m_pendingProgram = true;
+
+    //!!! no -- we should put parameter values in the shm
+    for (unsigned long i = 0; i < m_controlPortCount; ++i) {
+	if (!m_controlPorts[i]) continue;
+	*m_controlPorts[i] = m_plugin->getParameter(i);
+	m_controlPortsSaved[i] = *m_controlPorts[i];
+    }
 }
 
 void
@@ -286,6 +303,7 @@ DSSIVSTPluginInstance::run(unsigned long sampleCount)
 	    if (sampleCount != m_lastSampleCount) {
 		m_plugin->setBufferSize(sampleCount);
 		m_lastSampleCount = sampleCount;
+		if (m_latencyOut) *m_latencyOut = sampleCount;
 	    }
 
 	    for (unsigned long i = 0; i < m_controlPortCount; ++i) {
@@ -299,22 +317,6 @@ DSSIVSTPluginInstance::run(unsigned long sampleCount)
 	    }
     
 	    m_plugin->process(m_audioIns, m_audioOuts);
-
-	    if (m_pendingProgram) {
-		
-		for (unsigned long i = 0; i < m_controlPortCount; ++i) {
-
-		    if (!m_controlPorts[i]) continue;
-		    
-		    //!!! need to do this elsewhere -- unlike
-		    //setParameter it does actually take IPC time --
-		    //this is experimental only
-
-		    *m_controlPorts[i] = m_plugin->getParameter(i);
-		}
-
-		m_pendingProgram = false;
-	    }
 
 	} catch (RemotePluginClosedException) {
 	    m_ok = false;
@@ -411,18 +413,26 @@ DSSIVSTPlugin::DSSIVSTPlugin()
 
 	RemoteVSTClient::PluginRecord &rec = plugins[p];
 
-	ldesc->UniqueID = rec.uniqueId;
-	ldesc->Label = strdup(rec.dllName.c_str());
+	// LADSPA labels mustn't contain spaces.  We replace them with
+	// asterisks here and restore them when used to indicate DLL name
+	// again.
+	char *label = strdup(rec.dllName.c_str());
+	for (int i = 0; label[i]; ++i) {
+	    if (label[i] == ' ') label[i] = '*';
+	}
+
+	ldesc->UniqueID = 6666 + p;
+	ldesc->Label = label;
 	ldesc->Name = strdup(std::string(rec.pluginName + " VST").c_str());
 	ldesc->Maker = strdup(rec.vendorName.c_str());
 	ldesc->Copyright = strdup(ldesc->Maker);
-	
+
 	std::cerr << "Plugin name: " << ldesc->Name << std::endl;
 
 	int parameters = rec.parameters;
 	int inputs = rec.inputs;
 	int outputs = rec.outputs;
-	int portCount = parameters + inputs + outputs;
+	int portCount = parameters + inputs + outputs + 1; // 1 for latency output
 
 	LADSPA_PortDescriptor *ports = new LADSPA_PortDescriptor[portCount];
         char **names = new char *[portCount];
@@ -431,8 +441,8 @@ DSSIVSTPlugin::DSSIVSTPlugin()
 	for (int i = 0; i < parameters; ++i) {
 	    ports[i] = LADSPA_PORT_INPUT | LADSPA_PORT_CONTROL;
 	    names[i] = strdup(rec.parameterNames[i].c_str());
-	    hints[i].LowerBound = 0.0;
-	    hints[i].LowerBound = 1.0;
+	    hints[i].LowerBound = 0.0f;
+	    hints[i].UpperBound = 1.0f;
 	    hints[i].HintDescriptor =
 		LADSPA_HINT_BOUNDED_BELOW | LADSPA_HINT_BOUNDED_ABOVE;
 	    float deflt = rec.parameterDefaults[i];
@@ -447,7 +457,6 @@ DSSIVSTPlugin::DSSIVSTPlugin()
 	    } else {
 		hints[i].HintDescriptor |= LADSPA_HINT_DEFAULT_MIDDLE;
 	    }
-	    std::cerr << "Port " << i << ": name " << names[i] << ", hint " << hints[i].HintDescriptor << std::endl;
 	}
 
 	for (int i = 0; i < inputs; ++i) {
@@ -467,6 +476,10 @@ DSSIVSTPlugin::DSSIVSTPlugin()
 	    names[j] = strdup(buf);
 	    hints[j].HintDescriptor = 0;
 	}
+
+	ports[portCount-1] = LADSPA_PORT_OUTPUT | LADSPA_PORT_CONTROL;
+	names[portCount-1] = strdup("_latency");
+	hints[portCount-1].HintDescriptor = 0;
 
 	ldesc->PortCount = portCount;
 	ldesc->PortDescriptors = ports;

@@ -21,7 +21,6 @@ public:
     // lightweight bulk query mechanism
 
     struct PluginRecord {
-	unsigned long uniqueId;
 	std::string dllName;
 	std::string pluginName;
 	std::string vendorName;
