@@ -12,6 +12,7 @@
 #include <string>
 #include <vector>
 #include <sys/shm.h>
+#include <errno.h>
 
 // Any of the methods in this file, including constructors, should be
 // considered capable of throwing RemotePluginClosedException.  Do not
