@@ -15,6 +15,8 @@
 #include <fcntl.h>
 #include <sys/un.h>
 
+#include <sched.h>
+
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
 
@@ -43,7 +45,7 @@ static bool ready = false;
 static int bufferSize = 0;
 static int sampleRate = 0;
 
-static RemotePluginDebugLevel debugLevel = RemotePluginDebugEvents;
+static RemotePluginDebugLevel debugLevel = RemotePluginDebugSetup;
 
 using namespace std;
 
@@ -466,6 +468,17 @@ hostCallback(AEffect *plugin, long opcode, long index,
 DWORD WINAPI
 AudioThreadMain(LPVOID parameter)
 {
+    int policy = SCHED_FIFO;
+    struct sched_param param;
+
+    param.sched_priority = 1;
+
+    int result = sched_setscheduler(0, policy, &param);
+
+    if (result < 0) {
+	perror("Failed to set realtime priority for audio thread");
+    }
+
     while (1) {
 	try {
 	    remoteVSTServerInstance->dispatch();
@@ -499,6 +512,7 @@ WinMain(HINSTANCE hInst, HINSTANCE hPrevInst, LPSTR cmdline, int cmdshow)
 {
     char *libname = 0;
     char *fileInfo = 0;
+    bool tryGui = false, haveGui = true;
 
     cout << "DSSI VST plugin server v" << RemotePluginVersion << endl;
     cout << "Copyright (c) 2004 Chris Cannam - Fervent Software" << endl;
@@ -508,6 +522,10 @@ WinMain(HINSTANCE hInst, HINSTANCE hPrevInst, LPSTR cmdline, int cmdshow)
     if (cmdline) {
 	int offset = 0;
 	if (cmdline[0] == '"' || cmdline[0] == '\'') offset = 1;
+	if (!strncmp(&cmdline[offset], "-g ", 3)) {
+	    tryGui = true;
+	    offset += 3;
+	}
 	for (int ci = offset; cmdline[ci]; ++ci) {
 	    if (cmdline[ci] == ',') {
 		libname = strndup(cmdline + offset, ci - offset);
@@ -627,14 +645,16 @@ WinMain(HINSTANCE hInst, HINSTANCE hPrevInst, LPSTR cmdline, int cmdshow)
 	cerr << "dssi-vst-server[1]: plugin is a VST" << endl;
     }
 
-#ifdef SHOW_GUI
-    if (!(plugin->flags & effFlagsHasEditor)) {
-	cerr << "dssi-vst-server: ERROR: Plugin has no GUI (required)" << endl;
-	return 1;
-    } else if (debugLevel > 0) {
-	cerr << "dssi-vst-server[1]: plugin has a GUI" << endl;
+    if (tryGui) {
+	if (!(plugin->flags & effFlagsHasEditor)) {
+	    if (debugLevel > 0) {
+		cerr << "dssi-vst-server[1]: Plugin has no GUI" << endl;
+	    }
+	    haveGui = false;
+	} else if (debugLevel > 0) {
+	    cerr << "dssi-vst-server[1]: plugin has a GUI" << endl;
+	}
     }
-#endif
 
     if (!plugin->flags & effFlagsCanReplacing) {
 	cerr << "dssi-vst-server: ERROR: Plugin does not support processReplacing (required)"
@@ -655,72 +675,76 @@ WinMain(HINSTANCE hInst, HINSTANCE hPrevInst, LPSTR cmdline, int cmdshow)
 	return 1;
     }
 
-// This needs to be an argument:
-#ifdef SHOW_GUI
+    if (tryGui) {
 
-    cout << "Initialising Windows subsystem... ";
-    if (debugLevel > 0) cout << endl;
+	cout << "Initialising Windows subsystem... ";
+	if (debugLevel > 0) cout << endl;
 
-    WNDCLASSEX wclass;
-    wclass.cbSize = sizeof(WNDCLASSEX);
-    wclass.style = 0;
-    wclass.lpfnWndProc = MainProc;
-    wclass.cbClsExtra = 0;
-    wclass.cbWndExtra = 0;
-    wclass.hInstance = hInst;
-    wclass.hIcon = LoadIcon(hInst, APPLICATION_CLASS_NAME);
-    wclass.hCursor = LoadCursor(0, IDI_APPLICATION);
-    wclass.hbrBackground = (HBRUSH)GetStockObject(BLACK_BRUSH);
-    wclass.lpszMenuName = "MENU_DSSI_VST";
-    wclass.lpszClassName = APPLICATION_CLASS_NAME;
-    wclass.hIconSm = 0;
-    
-    if (!RegisterClassEx(&wclass)) {
-	cerr << "dssi-vst-server: ERROR: Failed to register Windows application class!\n" << endl;
-	return 1;
-    } else if (debugLevel > 0) {
-	cerr << "dssi-vst-server[1]: registered Windows application class \"" << APPLICATION_CLASS_NAME << "\"" << endl;
+	WNDCLASSEX wclass;
+	wclass.cbSize = sizeof(WNDCLASSEX);
+	wclass.style = 0;
+	wclass.lpfnWndProc = MainProc;
+	wclass.cbClsExtra = 0;
+	wclass.cbWndExtra = 0;
+	wclass.hInstance = hInst;
+	wclass.hIcon = LoadIcon(hInst, APPLICATION_CLASS_NAME);
+	wclass.hCursor = LoadCursor(0, IDI_APPLICATION);
+	wclass.hbrBackground = (HBRUSH)GetStockObject(BLACK_BRUSH);
+	wclass.lpszMenuName = "MENU_DSSI_VST";
+	wclass.lpszClassName = APPLICATION_CLASS_NAME;
+	wclass.hIconSm = 0;
+	
+	if (!RegisterClassEx(&wclass)) {
+	    cerr << "dssi-vst-server: ERROR: Failed to register Windows application class!\n" << endl;
+	    return 1;
+	} else if (debugLevel > 0) {
+	    cerr << "dssi-vst-server[1]: registered Windows application class \"" << APPLICATION_CLASS_NAME << "\"" << endl;
+	}
+	
+	hWnd = CreateWindow
+	    (APPLICATION_CLASS_NAME, remoteVSTServerInstance->getName().c_str(),
+	     WS_OVERLAPPEDWINDOW & ~WS_THICKFRAME & ~WS_MAXIMIZEBOX,
+	     CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT,
+	     0, 0, hInst, 0);
+	if (!hWnd) {
+	    cerr << "dssi-vst-server: ERROR: Failed to create window!\n" << endl;
+	    return 1;
+	} else if (debugLevel > 0) {
+	    cerr << "dssi-vst-server[1]: created main window" << endl;
+	}
+
+	if (!haveGui) {
+	    cerr << "Should be showing message here" << endl;
+	} else {
+
+	    plugin->dispatcher(plugin, effEditOpen, 0, 0, hWnd, 0);
+	    Rect *rect = 0;
+	    plugin->dispatcher(plugin, effEditGetRect, 0, 0, &rect, 0);
+	    if (!rect) {
+		cerr << "dssi-vst-server: ERROR: Plugin failed to report window size\n" << endl;
+		return 1;
+	    }
+
+	    // Seems we need to provide space in here for the titlebar and frame,
+	    // even though we don't know how big they'll be!  How crap.
+	    SetWindowPos(hWnd, 0, 0, 0,
+			 rect->right - rect->left + 6,
+			 rect->bottom - rect->top + 25,
+			 SWP_NOACTIVATE | SWP_NOMOVE |
+			 SWP_NOOWNERZORDER | SWP_NOZORDER);
+	    
+	    if (debugLevel > 0) {
+		cerr << "dssi-vst-server[1]: sized window" << endl;
+	    }
+	}
+
+	ShowWindow(hWnd, SW_SHOWNORMAL);
+	UpdateWindow(hWnd);
+
+	if (debugLevel > 0) {
+	    cerr << "dssi-vst-server[1]: showed window" << endl;
+	}
     }
-    
-    hWnd = CreateWindow
-	(APPLICATION_CLASS_NAME, remoteVSTServerInstance->getName().c_str(),
-	 WS_OVERLAPPEDWINDOW & ~WS_THICKFRAME & ~WS_MAXIMIZEBOX,
-	 CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT,
-	 0, 0, hInst, 0);
-    if (!hWnd) {
-	cerr << "dssi-vst-server: ERROR: Failed to create window!\n" << endl;
-	return 1;
-    } else if (debugLevel > 0) {
-	cerr << "dssi-vst-server[1]: created main window" << endl;
-    }
-
-    plugin->dispatcher(plugin, effEditOpen, 0, 0, hWnd, 0);
-    Rect *rect = 0;
-    plugin->dispatcher(plugin, effEditGetRect, 0, 0, &rect, 0);
-    if (!rect) {
-	cerr << "dssi-vst-server: ERROR: Plugin failed to report window size\n" << endl;
-	return 1;
-    }
-
-    // Seems we need to provide space in here for the titlebar and frame,
-    // even though we don't know how big they'll be!  How crap.
-    SetWindowPos(hWnd, 0, 0, 0,
-		 rect->right - rect->left + 6,
-		 rect->bottom - rect->top + 25,
-		 SWP_NOACTIVATE | SWP_NOMOVE |
-		 SWP_NOOWNERZORDER | SWP_NOZORDER);
-
-    if (debugLevel > 0) {
-	cerr << "dssi-vst-server[1]: sized window" << endl;
-    }
-
-    ShowWindow(hWnd, SW_SHOWNORMAL);
-    UpdateWindow(hWnd);
-
-    if (debugLevel > 0) {
-	cerr << "dssi-vst-server[1]: showed window" << endl;
-    }
-#endif
 
     cout << "done" << endl;
 

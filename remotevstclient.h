@@ -14,7 +14,7 @@ class RemoteVSTClient : public RemotePluginClient
 {
 public:
     // may throw a string exception
-    RemoteVSTClient(std::string dllName);
+    RemoteVSTClient(std::string dllName, bool showGUI = false);
 
     virtual ~RemoteVSTClient();
 

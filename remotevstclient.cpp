@@ -18,11 +18,13 @@
 #include "rdwrops.h"
 #include "paths.h"
 
-RemoteVSTClient::RemoteVSTClient(std::string dllName) :
+RemoteVSTClient::RemoteVSTClient(std::string dllName, bool showGUI) :
     RemotePluginClient()
 {
     pid_t child;
     std::string arg = dllName + "," + getFileIdentifiers();
+    if (showGUI) arg = "-g " + arg;
+
     const char *argStr = arg.c_str();
 
     // We want to run the dssi-vst-server script, which runs wine

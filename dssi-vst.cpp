@@ -242,33 +242,33 @@ DSSIVSTPluginInstance::deactivate()
 void
 DSSIVSTPluginInstance::connectPort(unsigned long port, LADSPA_Data *location)
 {
-    std::cerr << "connectPort(" << port << "," << location << ")" << std::endl;
+//    std::cerr << "connectPort(" << port << "," << location << ")" << std::endl;
 
     if (!m_ok) return;
 
     if (port < m_controlPortCount) {
-	std::cerr << "(control port)" << std::endl;
+//	std::cerr << "(control port)" << std::endl;
 	m_controlPorts[port] = location;
 	return;
     }
     port -= m_controlPortCount;
 
     if (port < m_audioInCount) {
-	std::cerr << "(audio in port)" << std::endl;
+//	std::cerr << "(audio in port)" << std::endl;
 	m_audioIns[port] = location;
 	return;
     }
     port -= m_audioInCount;
 
     if (port < m_audioOutCount) {
-	std::cerr << "(audio out port)" << std::endl;
+//	std::cerr << "(audio out port)" << std::endl;
 	m_audioOuts[port] = location;
 	return;
     }
     port -= m_audioOutCount;
 
     if (port < 1) { // latency
-	std::cerr << "(latency output port)" << std::endl;
+//	std::cerr << "(latency output port)" << std::endl;
 	m_latencyOut = location;
 	if (m_latencyOut) *m_latencyOut = 0;
 	return;
@@ -434,7 +434,7 @@ DSSIVSTPlugin::DSSIVSTPlugin()
 	ldesc->Maker = strdup(rec.vendorName.c_str());
 	ldesc->Copyright = strdup(ldesc->Maker);
 
-	std::cerr << "Plugin name: " << ldesc->Name << std::endl;
+//	std::cerr << "Plugin name: " << ldesc->Name << std::endl;
 
 	int parameters = rec.parameters;
 	int inputs = rec.inputs;
@@ -537,9 +537,9 @@ DSSI_Descriptor *
 DSSIVSTPlugin::queryDescriptor(unsigned long index)
 {
     if (index < m_descriptors.size()) {
-	std::cerr << "DSSIVSTPlugin::queryDescriptor: index is " << index
-		  << ", returning " << m_descriptors[index].second->LADSPA_Plugin->Name
-		  << std::endl;
+//	std::cerr << "DSSIVSTPlugin::queryDescriptor: index is " << index
+//		  << ", returning " << m_descriptors[index].second->LADSPA_Plugin->Name
+//		  << std::endl;
 	return m_descriptors[index].second;
     } else {
 	return 0;

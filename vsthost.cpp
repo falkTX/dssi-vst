@@ -22,10 +22,14 @@
 
 static RemotePluginClient *plugin = 0;
 
+#define MIDI_DECODED_SIZE 3
 #define MIDI_BUFFER_SIZE 3072
 
-static unsigned char alsaDecoderBuffer[MIDI_BUFFER_SIZE];
-static size_t alsaDecoderIndex = 0;
+static unsigned char midiStreamBuffer[(MIDI_BUFFER_SIZE + 1) * MIDI_DECODED_SIZE];
+static struct timeval midiTimeBuffer[MIDI_BUFFER_SIZE];
+static int midiFrameOffsets[MIDI_BUFFER_SIZE];
+static int midiReadIndex = 0, midiWriteIndex = 0;
+
 static snd_midi_event_t *alsaDecoder = 0;
 
 static pthread_mutex_t pluginMutex = PTHREAD_MUTEX_INITIALIZER;
@@ -59,9 +63,9 @@ bail(int sig)
     // -- this means we don't get a mutex lock in closeJack either
 
     if (sig != 0) {
-	fprintf(stderr, "vstsynth: signal %d received, exiting\n", sig);
+	fprintf(stderr, "vsthost: signal %d received, exiting\n", sig);
     } else {
-	fprintf(stderr, "vstsynth: bailing out\n");
+	fprintf(stderr, "vsthost: bailing out\n");
     }
 
     if (jackData.client) {
@@ -123,13 +127,14 @@ alsaSeqCallback(snd_seq_t *alsaSeqHandle)
 
     if (!ready) return;
 
-    if (alsaDecoderIndex > MIDI_BUFFER_SIZE - 10) return;
-
     do {
 
 	if (snd_seq_event_input(alsaSeqHandle, &ev) > 0) {
 
-	    pthread_mutex_lock(&pluginMutex);
+	    if (midiReadIndex == midiWriteIndex + 1) {
+		fprintf(stderr, "WARNING: MIDI stream buffer overflow\n");
+		continue;
+	    }
 
 	    if (ev->type == SND_SEQ_EVENT_NOTEON) {
 
@@ -151,17 +156,20 @@ alsaSeqCallback(snd_seq_t *alsaSeqHandle)
 
 	    long count = snd_midi_event_decode
 		(alsaDecoder,
-		 alsaDecoderBuffer + alsaDecoderIndex,
-		 MIDI_BUFFER_SIZE - alsaDecoderIndex,
+		 midiStreamBuffer + (midiWriteIndex * MIDI_DECODED_SIZE),
+		 (MIDI_BUFFER_SIZE - midiWriteIndex) * MIDI_DECODED_SIZE,
 		 ev);
 
 	    if (count > 0 && count <= 3) {
 
-		alsaDecoderIndex += count;
 		while (count < 3) {
-		    alsaDecoderBuffer[alsaDecoderIndex++] = '\0';
+		    midiStreamBuffer[midiWriteIndex * MIDI_DECODED_SIZE + count]
+			= '\0';
 		    ++count;
 		}
+
+		gettimeofday(midiTimeBuffer + midiWriteIndex, NULL);
+		midiWriteIndex = (midiWriteIndex + 1) % MIDI_BUFFER_SIZE;
 		
 	    } else if (count > 3) {
 		fprintf(stderr, "WARNING: MIDI event of type %d"
@@ -173,23 +181,21 @@ alsaSeqCallback(snd_seq_t *alsaSeqHandle)
 		fprintf(stderr, "WARNING: MIDI decoder error %ld"
 			" for event type %d\n", count, ev->type);
 	    }
-
-	    pthread_mutex_unlock(&pluginMutex);
 	}
 	
     } while (snd_seq_event_input_pending(alsaSeqHandle, 0) > 0);
 }
 
 int
-openAlsaSeq(const char *synthName)
+openAlsaSeq(const char *pluginName)
 {
     int portid;
     char alsaName[75];
 
-    if (synthName[0]) {
-	sprintf(alsaName, "%s VSTi", synthName);
+    if (pluginName[0]) {
+	sprintf(alsaName, "%s VST", pluginName);
     } else {
-	sprintf(alsaName, "VST Synth");
+	sprintf(alsaName, "VST Host");
     }
 
     alsaSeqHandle = 0;
@@ -222,18 +228,17 @@ openAlsaSeq(const char *synthName)
 int
 jackProcess(jack_nframes_t nframes, void *arg)
 {
+    int ri = midiReadIndex, wi = midiWriteIndex;
 
     if (nframes != jackData.buffer_size) {
-	//!!! erk -- this is apparently legal, though it will never
-	// happen with current JACK versions.  nframes can be anywhere
-	// in the range 0 -> buffersize
+	// This is apparently legal, though it will never happen with
+	// current JACK versions.  In theory nframes can be anywhere
+	// in the range 0 -> buffersize.  Let's not handle that yet.
 	fprintf(stderr, "ERROR: Internal JACK error: process() called with incorrect buffer size (was %d, should be %d)\n", nframes, jackData.buffer_size);
 	return 0;
     }
 
     if (sizeof(float) != sizeof(jack_default_audio_sample_t)) {
-	// require this for easy interaction with the synth
-	//!!! eliminate this dependency
 	fprintf(stderr, "ERROR: The JACK audio sample type is not \"float\"; can't proceed\n");
 	bail(0);
     }
@@ -247,20 +252,57 @@ jackProcess(jack_nframes_t nframes, void *arg)
 	    (jackData.output_ports[i], jackData.buffer_size);
     }
 
-    if (!ready) {
+    if (!ready || pthread_mutex_trylock(&pluginMutex)) {
 	for (int i = 0; i < jackData.output_count; ++i) {
 	    memset(jackData.output_buffers[i], 0, jackData.buffer_size * sizeof(float));
 	}
 	return 0;
     }
 
-    pthread_mutex_lock(&pluginMutex);
+    struct timeval tv, diff;
+    long framediff;
+    jack_nframes_t rate;
 
-    if (alsaDecoderIndex > 0) {
-	plugin->sendMIDIData(alsaDecoderBuffer, 0, alsaDecoderIndex);
-	alsaDecoderIndex = 0;
+    gettimeofday(&tv, NULL);
+    rate = jack_get_sample_rate(jackData.client);
+
+    while (ri != wi) {
+
+	diff.tv_sec = tv.tv_sec - midiTimeBuffer[ri].tv_sec;
+
+	if (tv.tv_usec < midiTimeBuffer[ri].tv_usec) {
+	    --diff.tv_sec;
+	    diff.tv_usec = tv.tv_usec + 1000000 - midiTimeBuffer[ri].tv_usec;
+	} else {
+	    diff.tv_usec = tv.tv_usec - midiTimeBuffer[ri].tv_usec;
+	}
+
+	framediff =
+	    diff.tv_sec * rate +
+	    ((diff.tv_usec / 1000) * rate) / 1000 +
+	    ((diff.tv_usec - 1000 * (diff.tv_usec / 1000)) * rate) / 1000000;
+
+	if (framediff >= (long)nframes) framediff = nframes - 1;
+	else if (framediff < 0) framediff = 0;
+
+	midiFrameOffsets[ri] = (int)(nframes - framediff - 1);
+	ri = (ri + 1) % MIDI_BUFFER_SIZE;
     }
-    
+
+    if (midiReadIndex > wi) {
+	plugin->sendMIDIData(midiStreamBuffer + midiReadIndex * MIDI_DECODED_SIZE,
+			     midiFrameOffsets + midiReadIndex,
+			     MIDI_BUFFER_SIZE - midiReadIndex);
+	midiReadIndex = 0;
+    }
+
+    if (midiReadIndex < wi) {
+	plugin->sendMIDIData(midiStreamBuffer + midiReadIndex * MIDI_DECODED_SIZE,
+			     midiFrameOffsets + midiReadIndex,
+			     wi - midiReadIndex);
+	midiReadIndex = wi;
+    }	
+
     plugin->process(jackData.input_buffers, jackData.output_buffers);
 
     pthread_mutex_unlock(&pluginMutex);
@@ -276,16 +318,16 @@ shutdownJack(void *arg)
 }
 
 int
-openJack(const char *synthName)
+openJack(const char *pluginName)
 {
     const char **ports = 0;
     char jackName[26];
     char tmpbuf[21];
     int i = 0, j = 0;
 
-    for (i = 0; i < 20 && synthName[i]; ++i) {
-	if (isalpha(synthName[i])) {
-	    tmpbuf[j] = tolower(synthName[i]);
+    for (i = 0; i < 20 && pluginName[i]; ++i) {
+	if (isalpha(pluginName[i])) {
+	    tmpbuf[j] = tolower(pluginName[i]);
 	    ++j;
 	}
     }
@@ -396,7 +438,7 @@ closeJack()
 void
 usage()
 {
-    fprintf(stderr, "Usage: vstsynth [-d<n>] <dll> (n may be 0, 1, 2 or 3 for debug level)\n");
+    fprintf(stderr, "Usage: vsthost [-n] [-d<x>] <dll>\n    -n  No GUI\n    -d  Debug level (0, 1, 2 or 3)\n");
     exit(2);
 }    
 
@@ -405,15 +447,18 @@ main(int argc, char **argv)
 {
     char *dllname = 0;
     int   debugLevel = 0;
+    bool  gui = true;
 
     int npfd;
     struct pollfd *pfd;
 
     while (1) {
-	int c = getopt(argc, argv, "d:");
+	int c = getopt(argc, argv, "nd:");
 	
 	if (c == -1) break;
-	else if (c == 'd') {
+	else if (c == 'n') {
+	    gui = false;
+	} else if (c == 'd') {
 	    int dl = atoi(optarg);
 	    if (dl >= 0 && dl < 4) debugLevel = dl;
 	    else {
@@ -443,23 +488,13 @@ main(int argc, char **argv)
     jackData.client = 0;
 
     try {
-	plugin = new RemoteVSTClient(dllname);
+	plugin = new RemoteVSTClient(dllname, gui);
     } catch (std::string e) {
 	perror(e.c_str());
 	bail(0);
     }
 
-    std::string synthName = plugin->getName();
-
-    printf("Parameters:\n");
-    for (int i = 0; i < plugin->getParameterCount(); ++i) {
-	printf(" %d. %s\n", i, plugin->getParameterName(i).c_str());
-    }
-
-    printf("Programs:\n");
-    for (int i = 0; i < plugin->getProgramCount(); ++i) {
-	printf(" %d. %s\n", i, plugin->getProgramName(i).c_str());
-    }
+    std::string pluginName = plugin->getName();
 
     // prevent child threads from wanting to handle signals
     sigset_t _signals;
@@ -476,12 +511,12 @@ main(int argc, char **argv)
     bool hasMIDI = plugin->hasMIDIInput();
 
     if (hasMIDI) {
-	if (openAlsaSeq(synthName.c_str())) {
+	if (openAlsaSeq(pluginName.c_str())) {
 	    plugin->warn("Failed to connect to ALSA sequencer MIDI interface");
 	    bail(0);
 	}
     }
-    if (openJack(synthName.c_str())) {
+    if (openJack(pluginName.c_str())) {
 	plugin->warn("Failed to connect to JACK audio server (jackd not running?)");
 	bail(0);
     }

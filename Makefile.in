@@ -121,7 +121,7 @@ SPEC_SRCS             = $(dssi-vst-server_exe_SPEC_SRCS) $(dssi-vst-scanner_exe_
 
 ### Generic autoconf targets
 
-all: apploader $(SUBDIRS) $(DLLS:%=%.so) $(EXES:%=%.so) vstsynth libremoteplugin.a dssi-vst.so
+all: apploader $(SUBDIRS) $(DLLS:%=%.so) $(EXES:%=%.so) vsthost libremoteplugin.a dssi-vst.so
 
 apploader: apploader.in
 	sed -e 's,@bindir\@,$(bindir),g' -e 's,@winelibdir\@,.,g' $(SRCDIR)/apploader.in >$@ || $(RM) $@
@@ -182,8 +182,8 @@ $(dssi-vst-scanner_exe_MODULE).so: $(dssi-vst-scanner_exe_MODULE).dbg.o $(dssi-v
 
 
 ### Client application
-vstsynth:	vstsynth.cpp remoteplugin.h remotepluginclient.h remotevstclient.o libremoteplugin.a
-		g++ -g3 -I/usr/local/include -L/usr/local/lib -Wall vstsynth.cpp remotevstclient.o -o vstsynth -L. -lremoteplugin -ljack -lasound
+vsthost:	vsthost.cpp remoteplugin.h remotepluginclient.h remotevstclient.o libremoteplugin.a
+		g++ -g3 -I/usr/local/include -L/usr/local/lib -Wall vsthost.cpp remotevstclient.o -o vsthost -L. -lremoteplugin -ljack -lasound
 
 libremoteplugin.a:	remotepluginclient.o remotepluginserver.o rdwrops.o paths.o
 	ar r $@ $^
