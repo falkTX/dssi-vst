@@ -127,12 +127,27 @@ RemotePluginClient::syncStartup()
 
     if ((m_controlResponseFd = open(m_controlResponseFileName, O_RDONLY)) < 0) {
 	cleanup();
-	throw((std::string)"Failed to open FIFO");
+	throw((std::string)"Failed to open control FIFO");
     }
 
-    if ((m_processFd = open(m_processFileName, O_WRONLY | O_NONBLOCK)) < 0) {
+    connected = false;
+
+    for (int attempt = 0; attempt < 6; ++attempt) {
+
+	if ((m_processFd = open(m_processFileName, O_WRONLY | O_NONBLOCK)) >= 0) {
+	    connected = true;
+	    break;
+	} else if (errno != ENXIO) {
+	    // an actual error occurred
+	    break;
+	}
+
+	sleep(1);
+    }
+	
+    if (!connected) {
 	cleanup();
-	throw((std::string)"Failed to open FIFO");
+	throw((std::string)"Failed to open process FIFO");
     }
 
     bool b = false;

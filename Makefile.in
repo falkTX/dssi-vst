@@ -134,11 +134,6 @@ install:: dssi-vst.so dssi-vst-scanner.exe.so dssi-vst-server.exe.so dssi-vst_gu
 	$(MKDIR) $(TARGET_DSSI_DIR)/dssi-vst
 	$(INSTALL) dssi-vst-scanner.exe.so dssi-vst-server.exe.so dssi-vst_gui.exe.so apploader $(TARGET_DSSI_DIR)/dssi-vst/
 	( cd $(TARGET_DSSI_DIR)/dssi-vst/ ; rm -f dssi-vst-scanner dssi-vst-server dssi-vst_gui ; ln -s apploader dssi-vst-scanner ; ln -s apploader dssi-vst-server ; ln -s apploader dssi-vst_gui ; chmod a+x * ../dssi-vst.so )
-	@echo
-	@echo 'You have installed a new version of dssi-vst.  If you have any'
-	@echo 'existing cache data files from previous versions in $$HOME/.dssi-vst/,'
-	@echo 'you are advised to delete them now to avoid any confusion.'
-	@echo
 
 uninstall::
 	$(RM) $(TARGET_DSSI_DIR)/dssi-vst.so
