@@ -42,6 +42,7 @@ public:
     void         setParameter(int, float);
     float        getParameter(int);
     float        getParameterDefault(int);
+    void         getParameters(int, int, float *);
 
     int          getProgramCount();
     std::string  getProgramName(int);

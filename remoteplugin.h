@@ -8,7 +8,7 @@
 #ifndef REMOTE_PLUGIN_H
 #define REMOTE_PLUGIN_H
 
-static const float RemotePluginVersion = 0.96;
+static const float RemotePluginVersion = 0.97;
 
 enum RemotePluginDebugLevel {
     RemotePluginDebugNone,
@@ -36,6 +36,7 @@ enum RemotePluginOpcode {
     RemotePluginSetParameter,
     RemotePluginGetParameter,
     RemotePluginGetParameterDefault,
+    RemotePluginGetParameters,
 
     RemotePluginGetProgramCount = 350,
     RemotePluginGetProgramName,

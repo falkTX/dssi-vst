@@ -301,13 +301,13 @@ DSSIVSTPluginInstance::selectProgram(unsigned long bank, unsigned long program)
 
     try {
 	m_plugin->setCurrentProgram(program);
+	m_plugin->getParameters(0, m_controlPortCount - 1, m_controlPortsSaved);
 
-	//!!! no -- we should put parameter values in the shm
 	for (unsigned long i = 0; i < m_controlPortCount; ++i) {
 	    if (!m_controlPorts[i]) continue;
-	    *m_controlPorts[i] = m_plugin->getParameter(i);
-	    m_controlPortsSaved[i] = *m_controlPorts[i];
+	    *m_controlPorts[i] = m_controlPortsSaved[i];
 	}
+
     } catch (RemotePluginClosedException) {
 	m_ok = false;
 	return;
@@ -364,8 +364,8 @@ DSSIVSTPluginInstance::runSynth(unsigned long sampleCount,
 
 		if (index >= MIDI_BUFFER_SIZE - 4) break;
 
-		std::cerr << "MIDI event at frame " << ev->time.tick
-			  << ", channel " << int(ev->data.note.channel) << std::endl;
+//		std::cerr << "MIDI event at frame " << ev->time.tick
+//			  << ", channel " << int(ev->data.note.channel) << std::endl;
 
 		m_frameOffsetsBuffer[i] = ev->time.tick;
 		ev->time.tick = 0;

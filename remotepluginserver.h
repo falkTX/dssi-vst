@@ -34,8 +34,11 @@ public:
     virtual int          getParameterCount()                  { return 0; }
     virtual std::string  getParameterName(int)                { return ""; }
     virtual void         setParameter(int, float)             { return; }
-    virtual float        getParameter(int)                    { return 0.0; }
-    virtual float        getParameterDefault(int)             { return 0.0; }
+    virtual float        getParameter(int)                    { return 0.0f; }
+    virtual float        getParameterDefault(int)             { return 0.0f; }
+    virtual void         getParameters(int p0, int pn, float *v) {
+	for (int i = p0; i <= pn; ++i) v[i - p0] = 0.0f;
+    }
 
     virtual int          getProgramCount()                    { return 0; }
     virtual std::string  getProgramName(int)                  { return ""; }

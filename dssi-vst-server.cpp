@@ -82,6 +82,7 @@ public:
     virtual void         setParameter(int, float);
     virtual float        getParameter(int);
     virtual float        getParameterDefault(int);
+    virtual void         getParameters(int, int, float *);
 
     virtual int          getProgramCount() { return m_plugin->numPrograms; }
     virtual std::string  getProgramName(int);
@@ -381,6 +382,14 @@ float
 RemoteVSTServer::getParameterDefault(int p)
 {
     return m_defaults[p];
+}
+
+void
+RemoteVSTServer::getParameters(int p0, int pn, float *v)
+{
+    for (int i = p0; i <= pn; ++i) {
+	v[i - p0] = m_plugin->getParameter(m_plugin, i);
+    }
 }
 
 std::string

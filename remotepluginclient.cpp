@@ -352,6 +352,15 @@ RemotePluginClient::getParameterDefault(int p)
     return readFloat(m_controlResponseFd);
 }
 
+void
+RemotePluginClient::getParameters(int p0, int pn, float *v)
+{
+    writeOpcode(m_controlRequestFd, RemotePluginGetParameters);
+    writeInt(m_controlRequestFd, p0);
+    writeInt(m_controlRequestFd, pn);
+    tryRead(m_controlResponseFd, v, (pn - p0 + 1) * sizeof(float));
+}
+
 bool
 RemotePluginClient::hasMIDIInput()
 {
@@ -397,7 +406,7 @@ RemotePluginClient::sendMIDIData(unsigned char *data, int *frameoffsets, int eve
 	memset(frameoffsets, 0, events * sizeof(int));
     }
 
-    std::cerr << "RemotePluginClient::sendMIDIData(" << events << ")" << std::endl;
+//    std::cerr << "RemotePluginClient::sendMIDIData(" << events << ")" << std::endl;
 
     tryWrite(m_processFd, frameoffsets, events * sizeof(int));
 }

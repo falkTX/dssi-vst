@@ -287,7 +287,7 @@ RemotePluginServer::dispatchProcessEvents()
 	int *frameoffsets = 0;
 	unsigned char *data = readMIDIData(m_processFd, &frameoffsets, events);
 	if (events && data && frameoffsets) {
-    std::cerr << "RemotePluginServer::sendMIDIData(" << events << ")" << std::endl;
+//    std::cerr << "RemotePluginServer::sendMIDIData(" << events << ")" << std::endl;
 
 	    sendMIDIData(data, frameoffsets, events);
 	}
@@ -298,6 +298,7 @@ void
 RemotePluginServer::dispatchControlEvents()
 {    
     RemotePluginOpcode opcode = RemotePluginNoOpcode;
+    static float *parameterBuffer = 0;
 
     tryRead(m_controlRequestFd, &opcode, sizeof(RemotePluginOpcode));
 
@@ -374,6 +375,18 @@ RemotePluginServer::dispatchControlEvents()
     case RemotePluginGetParameterDefault:
 	writeFloat(m_controlResponseFd, getParameterDefault(readInt(m_controlRequestFd)));
 	break;
+
+    case RemotePluginGetParameters:
+    {
+	if (!parameterBuffer) {
+	    parameterBuffer = new float[getParameterCount()];
+	}
+	int p0 = readInt(m_controlRequestFd);
+	int pn = readInt(m_controlRequestFd);
+	getParameters(p0, pn, parameterBuffer);
+	tryWrite(m_controlResponseFd, parameterBuffer, (pn - p0 + 1) * sizeof(float));
+	break;
+    }
 
     case RemotePluginHasMIDIInput:
     {
