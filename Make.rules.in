@@ -1,0 +1,170 @@
+# Copyright 2000 Francois Gouget for CodeWeavers
+# fgouget@codeweavers.com
+#
+# Global rules shared by all makefiles     -*-Makefile-*-
+#
+# Each individual makefile must define the following variables:
+# TOPOBJDIR    : top-level object directory
+# SRCDIR       : source directory for this module
+#
+# Each individual makefile may define the following additional variables:
+#
+# SUBDIRS      : subdirectories that contain a Makefile
+# DLLS         : WineLib libraries to be built
+# EXES         : WineLib executables to be built
+#
+# CEXTRA       : extra c flags (e.g. '-Wall')
+# CXXEXTRA     : extra c++ flags (e.g. '-Wall')
+# WRCEXTRA     : extra wrc flags (e.g. '-p _SysRes')
+# DEFINES      : defines (e.g. -DSTRICT)
+# INCLUDE_PATH : additional include path
+# LIBRARY_PATH : additional library path
+# LIBRARIES    : additional Unix libraries to link with
+#
+# C_SRCS       : C sources for the module
+# CXX_SRCS     : C++ sources for the module
+# RC_SRCS      : resource source files
+# SPEC_SRCS    : interface definition files
+
+
+# Where is Wine
+
+WINE_INCLUDE_ROOT = @WINE_INCLUDE_ROOT@
+WINE_INCLUDE_PATH = @WINE_INCLUDE_PATH@
+WINE_LIBRARY_ROOT = @WINE_LIBRARY_ROOT@
+WINE_LIBRARY_PATH = @WINE_LIBRARY_PATH@
+WINE_DLL_ROOT     = @WINE_DLL_ROOT@
+WINE_DLL_PATH     = @WINE_DLL_PATH@
+
+LDPATH            = @LDPATH@
+
+# Where are the MFC
+
+ATL_INCLUDE_ROOT = @ATL_INCLUDE_ROOT@
+ATL_INCLUDE_PATH = @ATL_INCLUDE_PATH@
+MFC_INCLUDE_ROOT = @MFC_INCLUDE_ROOT@
+MFC_INCLUDE_PATH = @MFC_INCLUDE_PATH@
+MFC_LIBRARY_ROOT = @MFC_LIBRARY_ROOT@
+MFC_LIBRARY_PATH = @MFC_LIBRARY_PATH@
+
+# Global definitions and options
+
+GLOBAL_DEFINES      = 
+GLOBAL_INCLUDE_PATH = 
+GLOBAL_DLL_PATH     = 
+GLOBAL_DLLS         = 
+GLOBAL_LIBRARY_PATH = 
+GLOBAL_LIBRARIES    = 
+
+# First some useful definitions
+
+SHELL     = /bin/sh
+CC        = @CC@
+CPP       = @CPP@
+CXX       = @CXX@
+WRC       = @WRC@
+CFLAGS    = @CFLAGS@ $(CEXTRA)
+CXXFLAGS  = @CXXFLAGS@ $(CXXEXTRA)
+WRCFLAGS  = $(WRCEXTRA)
+OPTIONS   = @OPTIONS@ -D_REENTRANT
+LIBS      = @LIBS@ $(LIBRARY_PATH)
+DIVINCL   = $(GLOBAL_INCLUDE_PATH) -I$(SRCDIR) $(INCLUDE_PATH) $(WINE_INCLUDE_PATH)
+ALLCFLAGS = $(DIVINCL) $(CFLAGS) $(GLOBAL_DEFINES) $(DEFINES) $(OPTIONS)
+ALLCXXFLAGS=$(DIVINCL) $(CXXFLAGS) $(GLOBAL_DEFINES) $(DEFINES) $(OPTIONS)
+ALL_DLL_PATH  = $(DLL_PATH) $(GLOBAL_DLL_PATH) $(WINE_DLL_PATH)
+ALL_LIBRARY_PATH = $(LIBRARY_PATH) $(GLOBAL_LIBRARY_PATH) $(WINE_LIBRARY_PATH)
+WINE_LIBRARIES = -lwine -lwine_unicode -lwine_uuid
+ALL_LIBRARIES = $(LIBRARIES:%=-l%) $(GLOBAL_LIBRARIES:%=-l%) $(WINE_LIBRARIES)
+LDSHARED  = @LDSHARED@
+LDXXSHARED= @LDXXSHARED@
+LDDLLFLAGS= @LDDLLFLAGS@
+STRIP     = strip
+STRIPFLAGS= --strip-unneeded
+LN_S      = @LN_S@
+RM        = rm -f
+MV        = mv
+MKDIR     = mkdir -p
+WINE      = @WINE@
+WINEBUILD = @WINEBUILD@
+@SET_MAKE@
+
+# Installation infos
+
+INSTALL         = install
+INSTALL_PROGRAM = $(INSTALL)
+INSTALL_SCRIPT  = $(INSTALL)
+INSTALL_DATA    = $(INSTALL) -m 644
+prefix          = @prefix@
+exec_prefix     = @exec_prefix@
+bindir          = @bindir@
+libdir          = @libdir@
+infodir         = @infodir@
+mandir          = @mandir@
+dlldir          = @libdir@/wine
+
+prog_manext     = 1
+conf_manext     = 5
+
+OBJS            = $(C_SRCS:.c=.o) $(CXX_SRCS:.cpp=.o) \
+                  $(SPEC_SRCS:.spec=.spec.o)
+CLEAN_FILES     = *.dbg.c *.spec.c y.tab.c y.tab.h lex.yy.c \
+                  core *.orig *.rej \
+                  \\\#*\\\# *~ *% .\\\#*
+
+# Implicit rules
+
+.SUFFIXES: .cpp .rc .res .spec .spec.c .spec.o
+
+.c.o:
+	$(CC) -c $(ALLCFLAGS) -o $@ $<
+
+.cpp.o:
+	$(CXX) -c $(ALLCXXFLAGS) -o $@ $<
+
+.cxx.o:
+	$(CXX) -c $(ALLCXXFLAGS) -o $@ $<
+
+.rc.res:
+	$(LDPATH) $(WRC) $(WRCFLAGS) $(DIVINCL) -o $@ $<
+
+.PHONY: all install uninstall clean distclean depend dummy
+
+# 'all' target first in case the enclosing Makefile didn't define any target
+
+all: Makefile
+
+# Rules for makefile
+
+Makefile: Makefile.in $(TOPSRCDIR)/configure
+	@echo $@ is older than $?, please rerun $(TOPSRCDIR)/configure
+	@exit 1
+
+# Rules for cleaning
+
+$(SUBDIRS:%=%/__clean__): dummy
+	cd `dirname $@` && $(MAKE) clean
+
+$(EXTRASUBDIRS:%=%/__clean__): dummy
+	-cd `dirname $@` && $(RM) $(CLEAN_FILES)
+
+clean:: $(SUBDIRS:%=%/__clean__) $(EXTRASUBDIRS:%=%/__clean__)
+	$(RM) $(CLEAN_FILES) $(RC_SRCS:.rc=.res) $(OBJS)
+	$(RM) $(DLLS:%=%.dbg.o) $(DLLS:%=%.spec.o) $(DLLS:%=%.so)
+	$(RM) $(EXES:%=%.dbg.o) $(EXES:%=%.spec.o) $(EXES:%=%.so) $(EXES:%.exe=%)
+
+# Rules for installing
+
+$(SUBDIRS:%=%/__install__): dummy
+	cd `dirname $@` && $(MAKE) install
+
+$(SUBDIRS:%=%/__uninstall__): dummy
+	cd `dirname $@` && $(MAKE) uninstall
+
+# Misc. rules
+
+$(SUBDIRS): dummy
+	@cd $@ && $(MAKE)
+
+dummy:
+
+# End of global rules

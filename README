@@ -1,0 +1,47 @@
+
+dssi-vst: a DSSI plugin wrapper for VST plugins
+===============================================
+
+This is a ***CURRENTLY INCOMPLETE AND NON-WORKING*** implementation of
+a DSSI plugin wrapper for VST effects and instruments with GUI support.
+
+Source files:
+
+* dssi-vst.cpp: DSSI plugin implementation (works OK mostly)
+* dssi-vst_gui.cpp: DSSI plugin GUI process implementation (not done yet)
+* dssi-vst-scanner.cpp: Program that determines what VSTs you have (a bit
+  like fstconfig in the fst package) and communicates it back to the plugin
+* dssi-vst-server.cpp: Program that hosts a single VST with a comms link
+  to the plugin (a bit like a less general version of Kjetil's vstserver)
+* rdwrops.cpp: misc functions
+* remotepluginclient.cpp/remotepluginserver.cpp: Code to handle process
+  separation for audio plugin (not VST specific), used by DSSI plugin & server
+* vstsyth.cpp: JACK/aseq host for VSTs using dssi-vst-server (but not using
+  the actual DSSI plugin).  Mostly for test purposes, this does nothing you
+  can't already do better with vstserver or jack_fst.
+
+Copyright (c) 2004 Chris Cannam.  dssi-vst does not use any code from
+vstserver or libfst.  It requires recent Wine and the VST SDK headers
+to build.  Compilation and (especially) installation are currently
+very involved, there will be simplifications later.
+
+I strongly recommend not attempting to use this code at all at the moment.
+
+
+Why not use vstserver or libfst?
+--------------------------------
+
+It doesn't use libfst because libfst is just too serious a thing to
+start messing about with in a plugin whose host doesn't know about it
+(because it involves introducing Wine threads into the host).
+
+Architecturally dssi-vst is a bit like vstserver.  The main reason it
+doesn't use vstserver is simply that I wrote most of this code quite a
+while ago as an exercise, and I've just got used to my own code. 
+
+FWIW most of the incomplete bits of this code are things that
+vstserver wouldn't help with (particularly the separate GUI process).
+
+
+Chris Cannam
+cannam@all-day-breakfast.com
