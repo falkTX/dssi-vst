@@ -128,7 +128,6 @@ private:
     int m_paramChangeReadIndex;
     int m_paramChangeWriteIndex;
 
-    std::map<int, float> m_parameterValues;
     enum {
 	EditNone,
 	EditStarted,
@@ -136,6 +135,7 @@ private:
     } m_editLevel;
     
     float *m_defaults;
+    float *m_values;
     bool m_hasMIDI;
 };
 
@@ -211,8 +211,10 @@ RemoteVSTServer::RemoteVSTServer(std::string fileIdentifiers,
     m_plugin->dispatcher(m_plugin, effMainsChanged, 0, 1, NULL, 0);
 
     m_defaults = new float[m_plugin->numParams];
+    m_values = new float[m_plugin->numParams];
     for (int i = 0; i < m_plugin->numParams; ++i) {
 	m_defaults[i] = m_plugin->getParameter(m_plugin, i);
+	m_values[i] = m_defaults[i];
     }
 
     pthread_mutex_unlock(&mutex);
@@ -330,7 +332,7 @@ RemoteVSTServer::setParameter(int p, float v)
     }
 
     //!!!
-    return;
+//    return;
 
     //!!! also could ignore first set for any given parameter
     //(probably just host setting to not-actually-correct default)?
@@ -355,8 +357,8 @@ RemoteVSTServer::setParameter(int p, float v)
 	} else {
 	    --m_guiEventsExpected;
 	    cerr << "Reduced to " << m_guiEventsExpected << endl;
-//	    pthread_mutex_unlock(&mutex);
-//	    return;
+	    pthread_mutex_unlock(&mutex);
+	    return;
 	}
     }
     
@@ -546,22 +548,23 @@ RemoteVSTServer::monitorEdits()
     if (m_editLevel != EditNone) {
 	
 	if (m_editLevel == EditFinished) m_editLevel = EditNone;
-	
-	for (std::map<int, float>::iterator i = m_parameterValues.begin();
-	     i != m_parameterValues.end(); ++i) {
-	    
-	    float actual = m_plugin->getParameter(m_plugin, i->first);
-	    
-	    if (actual != i->second) {
-		i->second = actual;
-		notifyGUI(i->first, actual);
+
+	for (int i = 0; i < m_plugin->numParams; ++i) {
+	    float actual = m_plugin->getParameter(m_plugin, i);
+	    if (actual != m_values[i]) {
+		m_values[i] = actual;
+		notifyGUI(i, actual);
 	    }
 	}
     }
 
     while (m_paramChangeReadIndex != m_paramChangeWriteIndex) {
-	notifyGUI(m_paramChangeIndices[m_paramChangeReadIndex],
-		  m_paramChangeValues[m_paramChangeReadIndex]);
+	int index = m_paramChangeIndices[m_paramChangeReadIndex];
+	float value = m_paramChangeValues[m_paramChangeReadIndex];
+	if (value != m_values[index]) {
+	    m_values[index] = value;
+	    notifyGUI(index, value);
+	}
 	m_paramChangeReadIndex =
 	    (m_paramChangeReadIndex + 1) % PARAMETER_CHANGE_COUNT;
     }
@@ -632,8 +635,6 @@ long VSTCALLBACK
 hostCallback(AEffect *plugin, long opcode, long index,
 	     long value, void *ptr, float opt)
 {
-    cerr << "hostCallback(" << opcode << ")" << endl;
-
     static VstTimeInfo timeInfo;
     int rv = 0;
 
@@ -658,9 +659,7 @@ hostCallback(AEffect *plugin, long opcode, long index,
 	if (debugLevel > 1)
 	    cerr << "dssi-vst-server[2]: audioMasterAutomate(" << index << "," << v << ")" << endl;
 
-	if (v != value) {
-	    remoteVSTServerInstance->scheduleGUINotify(index, v);
-	}
+	remoteVSTServerInstance->scheduleGUINotify(index, v);
 
 	break;
     }
