@@ -151,17 +151,17 @@ DSSIVSTPluginInstance::DSSIVSTPluginInstance(std::string dllName,
 	m_plugin = new RemoteVSTClient(dllName);
 
 	m_controlPortCount = m_plugin->getParameterCount();
-	m_controlPorts = new LADSPA_Data*[m_controlPortCount](0);
+	m_controlPorts = new LADSPA_Data*[m_controlPortCount];
 	m_controlPortsSaved = new LADSPA_Data[m_controlPortCount](NO_CONTROL_DATA);
-
+	
 	m_audioInCount = m_plugin->getInputCount();
-	m_audioIns = new LADSPA_Data*[m_audioInCount](0);
+	m_audioIns = new LADSPA_Data*[m_audioInCount];
 
 	m_audioOutCount = m_plugin->getOutputCount();
-	m_audioOuts = new LADSPA_Data*[m_audioOutCount](0);
+	m_audioOuts = new LADSPA_Data*[m_audioOutCount];
 
 	m_programCount = m_plugin->getProgramCount();
-	m_programs = new DSSI_Program_Descriptor*[m_programCount](0);
+	m_programs = new DSSI_Program_Descriptor*[m_programCount];
 	for (unsigned long i = 0; i < m_programCount; ++i) {
 	    m_programs[i] = new DSSI_Program_Descriptor;
 	    m_programs[i]->Bank = 0;
