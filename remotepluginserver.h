@@ -54,7 +54,9 @@ public:
     virtual void         showGUI(std::string guiData) { } 
     virtual void         hideGUI() { }
 
-    void dispatch(); // may throw RemotePluginClosedException
+    void dispatch(int timeout = -1); // may throw RemotePluginClosedException
+    void dispatchControl(int timeout = -1); // may throw RemotePluginClosedException
+    void dispatchProcess(int timeout = -1); // may throw RemotePluginClosedException
 
 protected:
     RemotePluginServer(std::string fileIdentifiers);
@@ -65,8 +67,8 @@ private:
     RemotePluginServer(const RemotePluginServer &); // not provided
     RemotePluginServer &operator=(const RemotePluginServer &); // not provided
 
-    void dispatchControl();
-    void dispatchProcess();
+    void dispatchControlEvents();
+    void dispatchProcessEvents();
 
     int m_bufferSize;
     int m_numInputs;

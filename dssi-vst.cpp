@@ -197,6 +197,7 @@ DSSIVSTPluginInstance::~DSSIVSTPluginInstance()
 {
     if (m_ok) {
 	try {
+	    std::cerr << "DSSIVSTPluginInstance::~DSSIVSTPluginInstance: asking plugin to terminate" << std::endl;
 	    m_plugin->terminate();
 	} catch (...) { }
     }
@@ -319,11 +320,12 @@ DSSIVSTPluginInstance::run(unsigned long sampleCount)
 		if (!m_controlPorts[i]) continue;
 
 		if (m_controlPortsSaved[i] != *m_controlPorts[i]) {
+		    std::cout << "Sending new value " << *m_controlPorts[i]
+			      << " for control port " << i << std::endl;
 		    m_plugin->setParameter(i, *m_controlPorts[i]);
 		    m_controlPortsSaved[i] =  *m_controlPorts[i];
+		    if (++modifiedCount > 10) break;
 		}
-
-		if (++modifiedCount > 10) break;
 	    }
     
 	    m_plugin->process(m_audioIns, m_audioOuts);

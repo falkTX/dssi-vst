@@ -16,7 +16,9 @@
 #include <fcntl.h>
 #include <sys/un.h>
 #include <sys/poll.h>
+#include <sys/time.h>
 #include <unistd.h>
+#include <time.h>
 
 #include <lo/lo.h>
 #include <lo/lo_lowlevel.h>
@@ -24,6 +26,7 @@
 #include "rdwrops.h"
 
 static int debugLevel = 3;
+static bool ready = false;
 static bool exiting = false;
 
 static lo_server oscserver = 0;
@@ -143,6 +146,10 @@ readFromPlugin()
 	tryRead(fifoFd, &opcode, sizeof(RemotePluginOpcode));
 
 	switch (opcode) {
+	    
+	case RemotePluginIsReady:
+	    ready = true;
+	    break;
 
 	case RemotePluginSetParameter:
 	{
@@ -247,6 +254,8 @@ main(int argc, char **argv)
 
     exiting = false;
     bool idle = true;
+    struct timeval tv;
+    gettimeofday(&tv, NULL);
 
     while (!exiting) {
 
@@ -266,6 +275,18 @@ main(int argc, char **argv)
 	}
 
 	idle = idleHere;
+
+	if (!ready) {
+	    struct timeval tv1;
+	    gettimeofday(&tv1, NULL);
+	    if (tv1.tv_sec > tv.tv_sec + 15) {
+		cerr << "dssi-vst_gui: No contact from plugin -- timed out on startup" << endl;
+		lo_send(hostaddr,
+			(std::string(hostpath) + "/exiting").c_str(),
+			"");
+		break;
+	    }
+	}
     }
 
     if (debugLevel > 0) {

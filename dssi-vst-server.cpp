@@ -43,11 +43,13 @@ struct Rect {
 };
 
 static bool inProcessThread = false;
+static HANDLE audioThreadHandle = 0;
 static bool exiting = false;
 static HWND hWnd = 0;
 static double currentSamplePosition = 0.0;
 
 static bool ready = false;
+static bool alive = false;
 static int bufferSize = 0;
 static int sampleRate = 0;
 static bool guiVisible = false;
@@ -121,7 +123,7 @@ private:
     int m_guiEventsExpected;
     struct timeval m_lastGuiComms;
 
-    // To be written by the audio management thread and read by the GUI thread
+    // To be written by the audio thread and read by the GUI thread
 #define PARAMETER_CHANGE_COUNT 200
     int m_paramChangeIndices[PARAMETER_CHANGE_COUNT];
     float m_paramChangeValues[PARAMETER_CHANGE_COUNT];
@@ -228,6 +230,14 @@ RemoteVSTServer::~RemoteVSTServer()
 	try {
 	    writeOpcode(m_guiFifoFd, RemotePluginTerminate);
 	} catch (...) { }
+	close(m_guiFifoFd);
+    }
+
+    if (guiVisible) {
+	ShowWindow(hWnd, SW_HIDE);
+	UpdateWindow(hWnd);
+	m_plugin->dispatcher(m_plugin, effEditClose, 0, 0, 0, 0);
+	guiVisible = false;
     }
 
     m_plugin->dispatcher(m_plugin, effMainsChanged, 0, 0, NULL, 0);
@@ -331,12 +341,6 @@ RemoteVSTServer::setParameter(int p, float v)
 	cerr << "dssi-vst-server[2]: setParameter (" << p << "," << v << ")" << endl;
     }
 
-    //!!!
-//    return;
-
-    //!!! also could ignore first set for any given parameter
-    //(probably just host setting to not-actually-correct default)?
-
     pthread_mutex_lock(&mutex);
     
     cerr << "RemoteVSTServer::setParameter (" << p << "," << v << "): " << m_guiEventsExpected << " events expected" << endl;
@@ -365,8 +369,6 @@ RemoteVSTServer::setParameter(int p, float v)
     pthread_mutex_unlock(&mutex);
     
     m_plugin->setParameter(m_plugin, p, v);
-
-cerr << "RemoteVSTServer::setParameter (" << p << "," << v << "): done" << endl;
 }
 
 float
@@ -506,11 +508,34 @@ RemoteVSTServer::showGUI(std::string guiData)
 	    pthread_mutex_unlock(&mutex);
 	    return;
 	}
+
+	writeOpcode(m_guiFifoFd, RemotePluginIsReady);
     }
 
-    ShowWindow(hWnd, SW_SHOWNORMAL);
-    UpdateWindow(hWnd);
-    guiVisible = true;
+    m_plugin->dispatcher(m_plugin, effEditOpen, 0, 0, hWnd, 0);
+    Rect *rect = 0;
+    m_plugin->dispatcher(m_plugin, effEditGetRect, 0, 0, &rect, 0);
+    if (!rect) {
+	cerr << "dssi-vst-server: ERROR: Plugin failed to report window size\n" << endl;
+    } else {
+	// Seems we need to provide space in here for the titlebar
+	// and frame, even though we don't know how big they'll
+	// be!  How crap.
+	SetWindowPos(hWnd, 0, 0, 0,
+		     rect->right - rect->left + 6,
+		     rect->bottom - rect->top + 25,
+		     SWP_NOACTIVATE | SWP_NOMOVE |
+		     SWP_NOOWNERZORDER | SWP_NOZORDER);
+	
+	if (debugLevel > 0) {
+	    cerr << "dssi-vst-server[1]: sized window" << endl;
+	}
+
+	ShowWindow(hWnd, SW_SHOWNORMAL);
+	UpdateWindow(hWnd);
+	guiVisible = true;
+    }
+
     m_paramChangeReadIndex = m_paramChangeWriteIndex;
 }
 
@@ -527,6 +552,7 @@ RemoteVSTServer::hideGUI()
 
     ShowWindow(hWnd, SW_HIDE);
     UpdateWindow(hWnd);
+    m_plugin->dispatcher(m_plugin, effEditClose, 0, 0, 0, 0);
     guiVisible = false;
 }
 
@@ -973,18 +999,66 @@ hostCallback(AEffect *plugin, long opcode, long index,
 };
 
 DWORD WINAPI
+WatchdogThreadMain(LPVOID parameter)
+{
+    struct sched_param param;
+    param.sched_priority = 2;
+    int result = sched_setscheduler(0, SCHED_FIFO, &param);
+    if (result < 0) {
+	perror("Failed to set realtime priority for watchdog thread");
+    }
+
+    int count = 0;
+
+    while (!exiting) {
+	if (!alive) {
+	    ++count;
+	}
+	if (count == 20) {
+	    cerr << "Remote VST plugin watchdog: terminating audio thread" << endl;
+	    // bam
+	    TerminateThread(audioThreadHandle, 0);
+	    exiting = 1;
+	    break;
+	} else {
+	    cerr << "Remote VST plugin watchdog: OK, count is " << count << endl;
+	}
+	sleep(1);
+    }
+
+    cerr << "Remote VST plugin watchdog thread: returning" << endl;
+
+    param.sched_priority = 0;
+    (void)sched_setscheduler(0, SCHED_OTHER, &param);
+}
+
+DWORD WINAPI
 AudioThreadMain(LPVOID parameter)
 {
     struct sched_param param;
     param.sched_priority = 1;
+    HANDLE watchdogThreadHandle;
     int result = sched_setscheduler(0, SCHED_FIFO, &param);
+
     if (result < 0) {
 	perror("Failed to set realtime priority for audio thread");
+    } else {
+	// Start a watchdog thread as well
+	DWORD watchdogThreadId = 0;
+	watchdogThreadHandle =
+	    CreateThread(0, 0, WatchdogThreadMain, 0, 0, &watchdogThreadId);
+	if (!watchdogThreadHandle) {
+	    cerr << "Failed to create watchdog thread -- not using RT priority for audio thread" << endl;
+	    param.sched_priority = 0;
+	    (void)sched_setscheduler(0, SCHED_OTHER, &param);
+	}
     }
 
     while (!exiting) {
+	alive = true;
 	try {
-	    remoteVSTServerInstance->dispatch();
+	    // This can call sendMIDIData, setCurrentProgram, process
+	    remoteVSTServerInstance->dispatchProcess(50);
 	} catch (std::string message) {
 	    cerr << "ERROR: Remote VST server instance failed: " << message << endl;
 	    exiting = true;
@@ -995,8 +1069,14 @@ AudioThreadMain(LPVOID parameter)
     }
 
     cerr << "Remote VST plugin audio thread: returning" << endl;
+
     param.sched_priority = 0;
     (void)sched_setscheduler(0, SCHED_OTHER, &param);
+
+    if (watchdogThreadHandle) {
+	TerminateThread(watchdogThreadHandle, 0);
+	CloseHandle(watchdogThreadHandle);
+    }
     return 0;
 }
 
@@ -1218,28 +1298,29 @@ WinMain(HINSTANCE hInst, HINSTANCE hPrevInst, LPSTR cmdline, int cmdshow)
 	cerr << "Should be showing message here" << endl;
     } else {
 	
-	plugin->dispatcher(plugin, effEditOpen, 0, 0, hWnd, 0);
-	Rect *rect = 0;
-	plugin->dispatcher(plugin, effEditGetRect, 0, 0, &rect, 0);
-	if (!rect) {
-	    cerr << "dssi-vst-server: ERROR: Plugin failed to report window size\n" << endl;
-	    return 1;
-	}
-	
-	// Seems we need to provide space in here for the titlebar and frame,
-	// even though we don't know how big they'll be!  How crap.
-	SetWindowPos(hWnd, 0, 0, 0,
-		     rect->right - rect->left + 6,
-		     rect->bottom - rect->top + 25,
-		     SWP_NOACTIVATE | SWP_NOMOVE |
-		     SWP_NOOWNERZORDER | SWP_NOZORDER);
-	
-	if (debugLevel > 0) {
-	    cerr << "dssi-vst-server[1]: sized window" << endl;
-	}
-
 	if (tryGui) {
 	
+	    plugin->dispatcher(plugin, effEditOpen, 0, 0, hWnd, 0);
+	    Rect *rect = 0;
+	    plugin->dispatcher(plugin, effEditGetRect, 0, 0, &rect, 0);
+	    if (!rect) {
+		cerr << "dssi-vst-server: ERROR: Plugin failed to report window size\n" << endl;
+		return 1;
+	    }
+	
+	    // Seems we need to provide space in here for the titlebar
+	    // and frame, even though we don't know how big they'll
+	    // be!  How crap.
+	    SetWindowPos(hWnd, 0, 0, 0,
+			 rect->right - rect->left + 6,
+			 rect->bottom - rect->top + 25,
+			 SWP_NOACTIVATE | SWP_NOMOVE |
+			 SWP_NOOWNERZORDER | SWP_NOZORDER);
+	    
+	    if (debugLevel > 0) {
+		cerr << "dssi-vst-server[1]: sized window" << endl;
+	    }
+
 	    ShowWindow(hWnd, SW_SHOWNORMAL);
 	    UpdateWindow(hWnd);
 
@@ -1254,8 +1335,8 @@ WinMain(HINSTANCE hInst, HINSTANCE hPrevInst, LPSTR cmdline, int cmdshow)
     cout << "done" << endl;
 
     DWORD threadId = 0;
-    HANDLE threadHandle = CreateThread(0, 0, AudioThreadMain, 0, 0, &threadId);
-    if (!threadHandle) {
+    audioThreadHandle = CreateThread(0, 0, AudioThreadMain, 0, 0, &threadId);
+    if (!audioThreadHandle) {
 	cerr << "Failed to create audio thread!" << endl;
 	delete remoteVSTServerInstance;
 	FreeLibrary(libHandle);
@@ -1270,25 +1351,30 @@ WinMain(HINSTANCE hInst, HINSTANCE hPrevInst, LPSTR cmdline, int cmdshow)
     exiting = false;
     while (!exiting) {
 
-	if (PeekMessage(&msg, 0, 0, 0, PM_REMOVE)) {
+	while (!exiting && PeekMessage(&msg, 0, 0, 0, PM_REMOVE)) {
 	    DispatchMessage(&msg);
+	}
+
+	if (exiting) break;
+
+	if (guiVisible) {
+	    remoteVSTServerInstance->dispatchControl(10);
 	} else {
-	    if (guiVisible) {
-		usleep(10000);
-	    } else {
-		usleep(500000);
-	    }
+	    remoteVSTServerInstance->dispatchControl(500);
 	}
 
 	remoteVSTServerInstance->checkGUIExited();
 	remoteVSTServerInstance->monitorEdits();
     }
 
+    // wait for audio thread to catch up
+    sleep(1);
+
     if (debugLevel > 0) {
 	cerr << "dssi-vst-server[1]: cleaning up" << endl;
     }
 
-    CloseHandle(threadHandle);
+    CloseHandle(audioThreadHandle);
     if (debugLevel > 0) {
 	cerr << "dssi-vst-server[1]: closed audio thread" << endl;
     }

@@ -168,7 +168,7 @@ RemotePluginServer::sizeShm()
 }    
 
 void
-RemotePluginServer::dispatch()
+RemotePluginServer::dispatch(int timeout)
 {
     struct pollfd pfd[2];
     
@@ -176,7 +176,7 @@ RemotePluginServer::dispatch()
     pfd[1].fd = m_processFd;
     pfd[0].events = pfd[1].events = POLLIN | POLLERR | POLLHUP;
 
-    if (poll(pfd, 2, -1) < 0) {
+    if (poll(pfd, 2, timeout) < 0) {
 	throw RemotePluginClosedException();
     }
     
@@ -190,7 +190,41 @@ RemotePluginServer::dispatch()
 }
 
 void
-RemotePluginServer::dispatchProcess()
+RemotePluginServer::dispatchControl(int timeout)
+{
+    struct pollfd pfd;
+    
+    pfd.fd = m_controlRequestFd;
+    pfd.events = POLLIN | POLLERR | POLLHUP;
+
+    if (poll(&pfd, 1, timeout) < 0) {
+	throw RemotePluginClosedException();
+    }
+    
+    if (pfd.revents & POLLIN) {
+	dispatchControlEvents();
+    }
+}
+
+void
+RemotePluginServer::dispatchProcess(int timeout)
+{
+    struct pollfd pfd;
+    
+    pfd.fd = m_processFd;
+    pfd.events = POLLIN | POLLERR | POLLHUP;
+
+    if (poll(&pfd, 1, timeout) < 0) {
+	throw RemotePluginClosedException();
+    }
+    
+    if (pfd.revents & POLLIN) {
+	dispatchProcessEvents();
+    }
+}
+
+void
+RemotePluginServer::dispatchProcessEvents()
 {    
     RemotePluginOpcode opcode = RemotePluginNoOpcode;
 
@@ -253,7 +287,7 @@ RemotePluginServer::dispatchProcess()
 }
 
 void
-RemotePluginServer::dispatchControl()
+RemotePluginServer::dispatchControlEvents()
 {    
     RemotePluginOpcode opcode = RemotePluginNoOpcode;
 
