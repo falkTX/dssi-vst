@@ -37,6 +37,9 @@ public:
 
     static void queryPlugins(std::vector<PluginRecord> &plugins);
 
+protected:
+    static bool addFromFd(int fd, PluginRecord &rec);
+
 private:
     RemoteVSTClient(const RemoteVSTClient &); // not provided
     RemoteVSTClient &operator=(const RemoteVSTClient &); // not provided

@@ -97,17 +97,82 @@ RemoteVSTClient::~RemoteVSTClient()
     }
 }
 
+bool
+RemoteVSTClient::addFromFd(int fd, PluginRecord &rec)
+{
+    char buffer[64];
+
+    try {
+	tryRead(fd, buffer, 64);
+	rec.dllName = buffer;
+    } catch (RemotePluginClosedException) {
+	// This is acceptable here; it probably just means we're done
+	return false;
+    }
+    
+    tryRead(fd, buffer, 64);
+    rec.pluginName = buffer;
+    
+//	    std::cerr << "Plugin " << rec.pluginName << std::endl;
+    
+    tryRead(fd, buffer, 64);
+    rec.vendorName = buffer;
+    
+    tryRead(fd, &rec.isSynth, sizeof(bool));
+    tryRead(fd, &rec.hasGUI, sizeof(bool));
+    tryRead(fd, &rec.inputs, sizeof(int));
+    tryRead(fd, &rec.outputs, sizeof(int));
+    tryRead(fd, &rec.parameters, sizeof(int));
+    
+//	    std::cerr << rec.parameters << " parameters" << std::endl;
+    
+    for (int i = 0; i < rec.parameters; ++i) {
+	tryRead(fd, buffer, 64);
+	rec.parameterNames.push_back(std::string(buffer));
+	float f;
+	tryRead(fd, &f, sizeof(float));
+	rec.parameterDefaults.push_back(f);
+//		std::cerr << "Parameter " << i << ": name " << buffer << ", default " << f << std::endl;
+    }
+    
+    tryRead(fd, &rec.programs, sizeof(int));
+    
+//	    std::cerr << rec.programs << " programs" << std::endl;
+    
+    for (int i = 0; i < rec.programs; ++i) {
+	tryRead(fd, buffer, 64);
+	rec.programNames.push_back(std::string(buffer));
+//		std::cerr << "Program " << i << ": name " << buffer << std::endl;
+    }
+
+    return true;
+}
+    
 void
 RemoteVSTClient::queryPlugins(std::vector<PluginRecord> &plugins)
 {
     // First check whether there are any DLLs in the same VST path as
     // the scanner uses.  If not, we know immediately there are no
     // plugins and we don't need to run the (Wine-based) scanner.
+    // If there are, but they all have up-to-date cache files, then
+    // we can just read those and again not have to run the scanner.
     
     std::vector<std::string> vstPath = Paths::getPath
 	("VST_PATH", "/usr/local/lib/vst:/usr/lib/vst", "/vst");
 
     bool haveDll = false;
+    bool haveAllCaches = false;
+    bool haveCacheDir = false;
+    int version = int(RemotePluginVersion * 1000);
+
+    char *home = getenv("HOME");
+    std::string cacheDir = std::string(home) + "/.dssi-vst";
+    DIR *test = opendir(cacheDir.c_str());
+    if (test) {
+	haveCacheDir = true;
+	haveAllCaches = true; // until proven otherwise
+	closedir(test);
+    }
 
     for (size_t i = 0; i < vstPath.size(); ++i) {
 	
@@ -124,16 +189,81 @@ RemoteVSTClient::queryPlugins(std::vector<PluginRecord> &plugins)
 		libname.length() >= 5 &&
 		(libname.substr(libname.length() - 4) == ".dll" ||
 		 libname.substr(libname.length() - 4) == ".DLL")) {
+
 		haveDll = true;
-		break;
+		if (!haveCacheDir) break;
+
+		if (haveAllCaches) {
+
+		    std::string cacheFileName = cacheDir + "/" + libname + ".cache";
+		    struct stat st;
+
+		    if (stat(cacheFileName.c_str(), &st)) {
+			haveAllCaches = false;
+		    } else {
+			int testfd = open(cacheFileName.c_str(), O_RDONLY);
+			int testVersion = 0;
+			if (testfd < 0 || 
+			    read(testfd, &testVersion, sizeof(int)) != sizeof(int) ||
+			    testVersion != version) {
+			    haveAllCaches = false;
+			}
+			if (testfd >= 0) close(testfd);
+		    }
+		}
 	    }
 	}
 
 	closedir(directory);
-	if (haveDll) break;
+	if (haveDll && !haveAllCaches) break;
     }
 
     if (!haveDll) return;
+
+    if (haveCacheDir && haveAllCaches) {
+	
+	std::cerr << "RemoteVSTClient: all cache files are up-to-date, "
+		  << "not running scanner" << std::endl;
+
+	for (size_t i = 0; i < vstPath.size(); ++i) {
+	
+	    std::string vstDir = vstPath[i];
+	    DIR *directory = opendir(vstDir.c_str());
+	    if (!directory) continue;
+	    struct dirent *entry;
+
+	    while ((entry = readdir(directory))) {
+	    
+		std::string libname = entry->d_name;
+
+		if (libname[0] != '.' &&
+		    libname.length() >= 5 &&
+		    (libname.substr(libname.length() - 4) == ".dll" ||
+		     libname.substr(libname.length() - 4) == ".DLL")) {
+
+		    std::string cacheFileName = cacheDir + "/" + libname + ".cache";
+		    int fd = -1;
+		    int testVersion = 0;
+
+		    if ((fd = open(cacheFileName.c_str(), O_RDONLY)) < 0) continue;
+		    if (read(fd, &testVersion, sizeof(int)) != sizeof(int) ||
+			testVersion != version) {
+			close(fd);
+			continue;
+		    }
+
+		    PluginRecord rec;
+		    if (addFromFd(fd, rec)) {
+			plugins.push_back(rec);
+		    }
+
+		    close(fd);
+		}
+	    }
+	}
+
+	return;
+    }
 
     char fifoFile[60];
 
@@ -250,7 +380,6 @@ RemoteVSTClient::queryPlugins(std::vector<PluginRecord> &plugins)
     }
 
     try {
-	char buffer[64];
 	int version = 0;
 
 	tryRead(fd, &version, sizeof(int));
@@ -259,54 +388,11 @@ RemoteVSTClient::queryPlugins(std::vector<PluginRecord> &plugins)
 	}
 
 	while (1) {
-
 	    PluginRecord rec;
-	    
-	    try {
-		tryRead(fd, buffer, 64);
-		rec.dllName = buffer;
-	    } catch (RemotePluginClosedException) {
-		// This is acceptable here; it just means we're done
-		break;
-	    }
-
-	    tryRead(fd, buffer, 64);
-	    rec.pluginName = buffer;
-	    
-//	    std::cerr << "Plugin " << rec.pluginName << std::endl;
-	    
-	    tryRead(fd, buffer, 64);
-	    rec.vendorName = buffer;
-	    
-	    tryRead(fd, &rec.isSynth, sizeof(bool));
-	    tryRead(fd, &rec.hasGUI, sizeof(bool));
-	    tryRead(fd, &rec.inputs, sizeof(int));
-	    tryRead(fd, &rec.outputs, sizeof(int));
-	    tryRead(fd, &rec.parameters, sizeof(int));
-	    
-//	    std::cerr << rec.parameters << " parameters" << std::endl;
-	    
-	    for (int i = 0; i < rec.parameters; ++i) {
-		tryRead(fd, buffer, 64);
-		rec.parameterNames.push_back(std::string(buffer));
-		float f;
-		tryRead(fd, &f, sizeof(float));
-		rec.parameterDefaults.push_back(f);
-//		std::cerr << "Parameter " << i << ": name " << buffer << ", default " << f << std::endl;
-	    }
-	    
-	    tryRead(fd, &rec.programs, sizeof(int));
-	    
-//	    std::cerr << rec.programs << " programs" << std::endl;
-	    
-	    for (int i = 0; i < rec.programs; ++i) {
-		tryRead(fd, buffer, 64);
-		rec.programNames.push_back(std::string(buffer));
-//		std::cerr << "Program " << i << ": name " << buffer << std::endl;
-	    }	    
-	    
+	    if (!addFromFd(fd, rec)) break; // done
 	    plugins.push_back(rec);
 	}
+
     } catch (std::string s) {
 	std::cerr << s << std::endl;
     } catch (RemotePluginClosedException) {
