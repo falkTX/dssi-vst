@@ -21,9 +21,10 @@ Source files:
   can't already do better with vstserver or jack_fst.
 
 Copyright (c) 2004 Chris Cannam.  dssi-vst does not use any code from
-vstserver or libfst.  It requires recent Wine and the VST SDK headers
-to build.  Compilation and (especially) installation are currently
-very involved, there will be simplifications later.
+vstserver or libfst.  It requires recent Wine, liblo, and the VST SDK
+headers to build.  Compilation and (especially) installation are
+currently very involved, and no there isn't any documentation on it
+yet.  There will be simplifications and docs later.
 
 I strongly recommend not attempting to use this code at all at the moment.
 
@@ -41,6 +42,15 @@ while ago as an exercise, and I've just got used to my own code.
 
 FWIW most of the incomplete bits of this code are things that
 vstserver wouldn't help with (particularly the separate GUI process).
+
+
+Licence
+-------
+
+Basically GPL, but I guess we need an exception for the VST SDK
+headers.  This code uses liblo, which is under the GPL without any
+such exception, so I'm evidently going to have to think a bit harder
+about this.  *sigh*  For now I advise against distributing it at all...
 
 
 Chris Cannam
