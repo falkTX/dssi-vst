@@ -9,11 +9,14 @@
 #include <fstream>
 #include <vector>
 #include <string>
+#include <map>
 
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <fcntl.h>
 #include <sys/un.h>
+#include <sys/time.h>
+#include <time.h>
 
 #include <unistd.h>
 #include <sched.h>
@@ -26,6 +29,7 @@
 #include "remotepluginserver.h"
 
 #include "paths.h"
+#include "rdwrops.h"
 
 #define APPLICATION_CLASS_NAME "dssi_vst"
 #define PLUGIN_ENTRY_POINT "main"
@@ -45,8 +49,9 @@ static double currentSamplePosition = 0.0;
 static bool ready = false;
 static int bufferSize = 0;
 static int sampleRate = 0;
+static bool guiVisible = false;
 
-static RemotePluginDebugLevel debugLevel = RemotePluginDebugSetup;
+static RemotePluginDebugLevel debugLevel = RemotePluginDebugEvents;
 static pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
 
 using namespace std;
@@ -84,24 +89,10 @@ public:
 				      int *frameOffsets,
 				      int events);
 
-    virtual void process(float **inputs, float **outputs) {
-	if (pthread_mutex_trylock(&mutex)) {
-	    for (int i = 0; i < m_plugin->numOutputs; ++i) {
-		memset(outputs[i], 0, bufferSize * sizeof(float));
-	    }
-	    currentSamplePosition += bufferSize;
-	    return;
-	}
+    virtual void         showGUI(std::string);
+    virtual void         hideGUI();
 
-	inProcessThread = true;
-
-	// superclass guarantees setBufferSize will be called before this
-	m_plugin->processReplacing(m_plugin, inputs, outputs, bufferSize);
-	currentSamplePosition += bufferSize;
-
-	inProcessThread = false;
-	pthread_mutex_unlock(&mutex);
-    }
+    virtual void process(float **inputs, float **outputs);
 
     virtual void setDebugLevel(RemotePluginDebugLevel level) {
 	debugLevel = level;
@@ -109,10 +100,29 @@ public:
 
     virtual bool warn(std::string);
 
+    void startEdit();
+    void endEdit();
+    void monitorEdits();
+    void notifyGUI(int index, float value);
+
 private:
     AEffect *m_plugin;
+
     std::string m_name;
     std::string m_maker;
+
+    std::string m_guiFifoFile;
+    int m_guiFifoFd;
+    int m_guiEventsExpected;
+    struct timeval m_lastGuiComms;
+
+    std::map<int, float> m_parameterValues;
+    enum {
+	EditNone,
+	EditStarted,
+	EditFinished
+    } m_editLevel;
+    
     float *m_defaults;
     bool m_hasMIDI;
 };
@@ -124,7 +134,11 @@ RemoteVSTServer::RemoteVSTServer(std::string fileIdentifiers,
     RemotePluginServer(fileIdentifiers),
     m_plugin(plugin),
     m_name(fallbackName),
-    m_maker("")
+    m_maker(""),
+    m_guiFifoFile(""),
+    m_guiFifoFd(-1),
+    m_guiEventsExpected(0),
+    m_editLevel(EditNone)
 {
     pthread_mutex_lock(&mutex);
 
@@ -194,9 +208,34 @@ RemoteVSTServer::~RemoteVSTServer()
 {
     pthread_mutex_lock(&mutex);
 
+    if (m_guiFifoFd >= 0) {
+	writeOpcode(m_guiFifoFd, RemotePluginTerminate);
+    }
+
     m_plugin->dispatcher(m_plugin, effClose, 0, 0, NULL, 0);
     delete[] m_defaults;
 
+    pthread_mutex_unlock(&mutex);
+}
+
+void
+RemoteVSTServer::process(float **inputs, float **outputs)
+{
+    if (pthread_mutex_trylock(&mutex)) {
+	for (int i = 0; i < m_plugin->numOutputs; ++i) {
+	    memset(outputs[i], 0, bufferSize * sizeof(float));
+	}
+	currentSamplePosition += bufferSize;
+	return;
+    }
+    
+    inProcessThread = true;
+    
+    // superclass guarantees setBufferSize will be called before this
+    m_plugin->processReplacing(m_plugin, inputs, outputs, bufferSize);
+    currentSamplePosition += bufferSize;
+    
+    inProcessThread = false;
     pthread_mutex_unlock(&mutex);
 }
 
@@ -205,11 +244,12 @@ RemoteVSTServer::setBufferSize(int sz)
 {
     pthread_mutex_lock(&mutex);
 
-    m_plugin->dispatcher(m_plugin, effMainsChanged, 0, 0, NULL, 0);
-    m_plugin->dispatcher(m_plugin, effSetBlockSize, 0, sz, NULL, 0);
-    m_plugin->dispatcher(m_plugin, effMainsChanged, 0, 1, NULL, 0);
-
-    bufferSize = sz;
+    if (bufferSize != sz) {
+	m_plugin->dispatcher(m_plugin, effMainsChanged, 0, 0, NULL, 0);
+	m_plugin->dispatcher(m_plugin, effSetBlockSize, 0, sz, NULL, 0);
+	m_plugin->dispatcher(m_plugin, effMainsChanged, 0, 1, NULL, 0);
+	bufferSize = sz;
+    }
 
     if (debugLevel > 0) {
 	cerr << "dssi-vst-server[1]: set buffer size to " << sz << endl;
@@ -223,11 +263,12 @@ RemoteVSTServer::setSampleRate(int sr)
 {
     pthread_mutex_lock(&mutex);
 
-    m_plugin->dispatcher(m_plugin, effMainsChanged, 0, 0, NULL, 0);
-    m_plugin->dispatcher(m_plugin, effSetSampleRate, 0, 0, NULL, (float)sr);
-    m_plugin->dispatcher(m_plugin, effMainsChanged, 0, 1, NULL, 0);
-
-    sampleRate = sr;
+    if (sampleRate != sr) {
+	m_plugin->dispatcher(m_plugin, effMainsChanged, 0, 0, NULL, 0);
+	m_plugin->dispatcher(m_plugin, effSetSampleRate, 0, 0, NULL, (float)sr);
+	m_plugin->dispatcher(m_plugin, effMainsChanged, 0, 1, NULL, 0);
+	sampleRate = sr;
+    }
 
     if (debugLevel > 0) {
 	cerr << "dssi-vst-server[1]: set sample rate to " << sr << endl;
@@ -240,6 +281,8 @@ void
 RemoteVSTServer::reset()
 {
     pthread_mutex_lock(&mutex);
+
+    cerr << "dssi-vst-server[1]: reset" << endl;
 
     m_plugin->dispatcher(m_plugin, effMainsChanged, 0, 0, NULL, 0);
     m_plugin->dispatcher(m_plugin, effMainsChanged, 0, 1, NULL, 0);
@@ -265,7 +308,46 @@ RemoteVSTServer::getParameterName(int p)
 void
 RemoteVSTServer::setParameter(int p, float v)
 {
+    if (debugLevel > 1) {
+	cerr << "dssi-vst-server[2]: setParameter (" << p << "," << v << ")" << endl;
+    }
+
+    //!!!
+    return;
+
+    //!!! also could ignore first set for any given parameter
+    //(probably just host setting to not-actually-correct default)?
+
+    pthread_mutex_lock(&mutex);
+    
+    cerr << "RemoteVSTServer::setParameter (" << p << "," << v << "): " << m_guiEventsExpected << " events expected" << endl;
+    
+    if (m_guiFifoFd < 0) {
+	m_guiEventsExpected = 0;
+    }
+    
+    if (m_guiEventsExpected > 0) {
+	
+	//!!! should be per-parameter of course!
+	
+	struct timeval tv;
+	gettimeofday(&tv, NULL);
+    
+	if (tv.tv_sec > m_lastGuiComms.tv_sec + 10) {
+	    m_guiEventsExpected = 0;
+	} else {
+	    --m_guiEventsExpected;
+	    cerr << "Reduced to " << m_guiEventsExpected << endl;
+//	    pthread_mutex_unlock(&mutex);
+//	    return;
+	}
+    }
+    
+    pthread_mutex_unlock(&mutex);
+    
     m_plugin->setParameter(m_plugin, p, v);
+
+cerr << "RemoteVSTServer::setParameter (" << p << "," << v << "): done" << endl;
 }
 
 float
@@ -283,6 +365,10 @@ RemoteVSTServer::getParameterDefault(int p)
 std::string
 RemoteVSTServer::getProgramName(int p)
 {
+    if (debugLevel > 1) {
+	cerr << "dssi-vst-server[2]: getProgramName(" << p << ")" << endl;
+    }
+
     pthread_mutex_lock(&mutex);
 
     char name[24];
@@ -302,6 +388,10 @@ RemoteVSTServer::getProgramName(int p)
 void
 RemoteVSTServer::setCurrentProgram(int p)
 {
+    if (debugLevel > 1) {
+	cerr << "dssi-vst-server[2]: setCurrentProgram(" << p << ")" << endl;
+    }
+
     pthread_mutex_lock(&mutex);
 
     m_plugin->dispatcher(m_plugin, effSetProgram, 0, p, 0, 0);
@@ -375,6 +465,105 @@ RemoteVSTServer::warn(std::string warning)
     return true;
 }
 
+void
+RemoteVSTServer::showGUI(std::string guiData)
+{
+    cerr << "RemoteVSTServer::showGUI(" << guiData << "): guiVisible is " << guiVisible << endl;
+
+    if (guiVisible) return;
+
+    if (guiData != m_guiFifoFile || m_guiFifoFd < 0) {
+
+	if (m_guiFifoFd >= 0) {
+	    close(m_guiFifoFd);
+	    m_guiFifoFd = -1;
+	}
+
+	m_guiFifoFile = guiData;
+
+	if ((m_guiFifoFd = open(m_guiFifoFile.c_str(), O_WRONLY | O_NONBLOCK)) < 0) {
+	    perror(m_guiFifoFile.c_str());
+	    cerr << "WARNING: Failed to open FIFO to GUI manager process" << endl;
+	    return;
+	}
+    }
+
+    ShowWindow(hWnd, SW_SHOWNORMAL);
+    UpdateWindow(hWnd);
+    guiVisible = true;
+}
+
+void
+RemoteVSTServer::hideGUI()
+{
+    if (!guiVisible) return;
+
+    if (m_guiFifoFd >= 0) {
+	int fd = m_guiFifoFd;
+	m_guiFifoFd = -1;
+	close(m_guiFifoFd);
+    }
+
+    ShowWindow(hWnd, SW_HIDE);
+    UpdateWindow(hWnd);
+    guiVisible = false;
+}
+
+void
+RemoteVSTServer::startEdit()
+{
+    m_editLevel = EditStarted;
+}
+
+void
+RemoteVSTServer::endEdit()
+{
+    m_editLevel = EditFinished;
+}
+
+void
+RemoteVSTServer::monitorEdits()
+{
+    if (m_editLevel != EditNone) {
+	
+	if (m_editLevel == EditFinished) m_editLevel = EditNone;
+	
+	for (std::map<int, float>::iterator i = m_parameterValues.begin();
+	     i != m_parameterValues.end(); ++i) {
+	    
+	    float actual = m_plugin->getParameter(m_plugin, i->first);
+	    
+	    if (actual != i->second) {
+		i->second = actual;
+		notifyGUI(i->first, actual);
+	    }
+	}
+    }
+}
+
+void
+RemoteVSTServer::notifyGUI(int index, float value)
+{
+    if (m_guiFifoFd >= 0) {
+
+	cerr << "RemoteVSTServer::notifyGUI(" << index << "," << value << "): about to lock" << endl;
+
+	pthread_mutex_lock(&mutex);
+
+	writeOpcode(m_guiFifoFd, RemotePluginSetParameter);
+	int i = (int)index;
+	writeInt(m_guiFifoFd, i);
+	writeFloat(m_guiFifoFd, value);
+
+	gettimeofday(&m_lastGuiComms, NULL);
+	++m_guiEventsExpected;
+
+	cerr << "wrote (" << i << "," << value << ") to gui (" << m_guiEventsExpected << " events expected now)" << endl;
+
+	pthread_mutex_unlock(&mutex);
+    }
+}
+    
 
 long VSTCALLBACK
 hostCallback(AEffect *plugin, long opcode, long index,
@@ -385,9 +574,30 @@ hostCallback(AEffect *plugin, long opcode, long index,
     switch (opcode) {
 
     case audioMasterAutomate:
+    {
+	/*!!! Automation:
+
+	When something changes here, we send it straight to the GUI
+	via our back channel.  The GUI sends it back to the host via
+	configure; that comes to us; and we somehow need to know to
+	ignore it.  Checking whether it's the same as the existing
+	param value won't cut it, as we might be changing that
+	continuously.  (Shall we record that we're expecting the
+	configure call because we just sent to the GUI?)
+
+	*/
+
+	float v = plugin->getParameter(plugin, index);
+
 	if (debugLevel > 1)
-	    cerr << "dssi-vst-server[2]: audioMasterAutomate requested" << endl;
+	    cerr << "dssi-vst-server[2]: audioMasterAutomate(" << index << "," << v << ")" << endl;
+
+	if (v != value) {
+	    remoteVSTServerInstance->notifyGUI(index, v);
+	}
+
 	break;
+    }
 
     case audioMasterVersion:
 	if (debugLevel > 1)
@@ -418,8 +628,8 @@ hostCallback(AEffect *plugin, long opcode, long index,
 	return 1;
 
     case audioMasterGetTime:
-	if (debugLevel > 1)
-	    cerr << "dssi-vst-server[2]: audioMasterGetTime requested" << endl;
+//	if (debugLevel > 1)
+//	    cerr << "dssi-vst-server[2]: audioMasterGetTime requested" << endl;
 	timeInfo.samplePos = currentSamplePosition;
 	timeInfo.sampleRate = sampleRate;
 	timeInfo.flags = 0; // don't mark anything valid except default samplePos/Rate
@@ -639,11 +849,13 @@ hostCallback(AEffect *plugin, long opcode, long index,
     case audioMasterBeginEdit:
 	if (debugLevel > 1)
 	    cerr << "dssi-vst-server[2]: audioMasterBeginEdit requested" << endl;
+	remoteVSTServerInstance->startEdit();
 	break;
 
     case audioMasterEndEdit:
 	if (debugLevel > 1)
 	    cerr << "dssi-vst-server[2]: audioMasterEndEdit requested" << endl;
+	remoteVSTServerInstance->endEdit();
 	break;
 
     case audioMasterOpenFileSelector:
@@ -862,15 +1074,13 @@ WinMain(HINSTANCE hInst, HINSTANCE hPrevInst, LPSTR cmdline, int cmdshow)
 	cerr << "dssi-vst-server[1]: plugin is a VST" << endl;
     }
 
-    if (tryGui) {
-	if (!(plugin->flags & effFlagsHasEditor)) {
-	    if (debugLevel > 0) {
-		cerr << "dssi-vst-server[1]: Plugin has no GUI" << endl;
-	    }
-	    haveGui = false;
-	} else if (debugLevel > 0) {
-	    cerr << "dssi-vst-server[1]: plugin has a GUI" << endl;
+    if (!(plugin->flags & effFlagsHasEditor)) {
+	if (debugLevel > 0) {
+	    cerr << "dssi-vst-server[1]: Plugin has no GUI" << endl;
 	}
+	haveGui = false;
+    } else if (debugLevel > 0) {
+	cerr << "dssi-vst-server[1]: plugin has a GUI" << endl;
     }
 
     if (!plugin->flags & effFlagsCanReplacing) {
@@ -892,74 +1102,76 @@ WinMain(HINSTANCE hInst, HINSTANCE hPrevInst, LPSTR cmdline, int cmdshow)
 	return 1;
     }
 
-    if (tryGui) {
+    cout << "Initialising Windows subsystem... ";
+    if (debugLevel > 0) cout << endl;
 
-	cout << "Initialising Windows subsystem... ";
-	if (debugLevel > 0) cout << endl;
-
-	WNDCLASSEX wclass;
-	wclass.cbSize = sizeof(WNDCLASSEX);
-	wclass.style = 0;
-	wclass.lpfnWndProc = MainProc;
-	wclass.cbClsExtra = 0;
-	wclass.cbWndExtra = 0;
-	wclass.hInstance = hInst;
-	wclass.hIcon = LoadIcon(hInst, APPLICATION_CLASS_NAME);
-	wclass.hCursor = LoadCursor(0, IDI_APPLICATION);
-	wclass.hbrBackground = (HBRUSH)GetStockObject(BLACK_BRUSH);
-	wclass.lpszMenuName = "MENU_DSSI_VST";
-	wclass.lpszClassName = APPLICATION_CLASS_NAME;
-	wclass.hIconSm = 0;
+    WNDCLASSEX wclass;
+    wclass.cbSize = sizeof(WNDCLASSEX);
+    wclass.style = 0;
+    wclass.lpfnWndProc = MainProc;
+    wclass.cbClsExtra = 0;
+    wclass.cbWndExtra = 0;
+    wclass.hInstance = hInst;
+    wclass.hIcon = LoadIcon(hInst, APPLICATION_CLASS_NAME);
+    wclass.hCursor = LoadCursor(0, IDI_APPLICATION);
+    wclass.hbrBackground = (HBRUSH)GetStockObject(BLACK_BRUSH);
+    wclass.lpszMenuName = "MENU_DSSI_VST";
+    wclass.lpszClassName = APPLICATION_CLASS_NAME;
+    wclass.hIconSm = 0;
 	
-	if (!RegisterClassEx(&wclass)) {
-	    cerr << "dssi-vst-server: ERROR: Failed to register Windows application class!\n" << endl;
+    if (!RegisterClassEx(&wclass)) {
+	cerr << "dssi-vst-server: ERROR: Failed to register Windows application class!\n" << endl;
+	return 1;
+    } else if (debugLevel > 0) {
+	cerr << "dssi-vst-server[1]: registered Windows application class \"" << APPLICATION_CLASS_NAME << "\"" << endl;
+    }
+    
+    hWnd = CreateWindow
+	(APPLICATION_CLASS_NAME, remoteVSTServerInstance->getName().c_str(),
+	 WS_OVERLAPPEDWINDOW & ~WS_THICKFRAME & ~WS_MAXIMIZEBOX,
+	 CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT,
+	 0, 0, hInst, 0);
+    if (!hWnd) {
+	cerr << "dssi-vst-server: ERROR: Failed to create window!\n" << endl;
+	return 1;
+    } else if (debugLevel > 0) {
+	cerr << "dssi-vst-server[1]: created main window" << endl;
+    }
+    
+    if (!haveGui) {
+	cerr << "Should be showing message here" << endl;
+    } else {
+	
+	plugin->dispatcher(plugin, effEditOpen, 0, 0, hWnd, 0);
+	Rect *rect = 0;
+	plugin->dispatcher(plugin, effEditGetRect, 0, 0, &rect, 0);
+	if (!rect) {
+	    cerr << "dssi-vst-server: ERROR: Plugin failed to report window size\n" << endl;
 	    return 1;
-	} else if (debugLevel > 0) {
-	    cerr << "dssi-vst-server[1]: registered Windows application class \"" << APPLICATION_CLASS_NAME << "\"" << endl;
 	}
 	
-	hWnd = CreateWindow
-	    (APPLICATION_CLASS_NAME, remoteVSTServerInstance->getName().c_str(),
-	     WS_OVERLAPPEDWINDOW & ~WS_THICKFRAME & ~WS_MAXIMIZEBOX,
-	     CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT,
-	     0, 0, hInst, 0);
-	if (!hWnd) {
-	    cerr << "dssi-vst-server: ERROR: Failed to create window!\n" << endl;
-	    return 1;
-	} else if (debugLevel > 0) {
-	    cerr << "dssi-vst-server[1]: created main window" << endl;
-	}
-
-	if (!haveGui) {
-	    cerr << "Should be showing message here" << endl;
-	} else {
-
-	    plugin->dispatcher(plugin, effEditOpen, 0, 0, hWnd, 0);
-	    Rect *rect = 0;
-	    plugin->dispatcher(plugin, effEditGetRect, 0, 0, &rect, 0);
-	    if (!rect) {
-		cerr << "dssi-vst-server: ERROR: Plugin failed to report window size\n" << endl;
-		return 1;
-	    }
-
-	    // Seems we need to provide space in here for the titlebar and frame,
-	    // even though we don't know how big they'll be!  How crap.
-	    SetWindowPos(hWnd, 0, 0, 0,
-			 rect->right - rect->left + 6,
-			 rect->bottom - rect->top + 25,
-			 SWP_NOACTIVATE | SWP_NOMOVE |
-			 SWP_NOOWNERZORDER | SWP_NOZORDER);
-	    
-	    if (debugLevel > 0) {
-		cerr << "dssi-vst-server[1]: sized window" << endl;
-	    }
-	}
-
-	ShowWindow(hWnd, SW_SHOWNORMAL);
-	UpdateWindow(hWnd);
-
+	// Seems we need to provide space in here for the titlebar and frame,
+	// even though we don't know how big they'll be!  How crap.
+	SetWindowPos(hWnd, 0, 0, 0,
+		     rect->right - rect->left + 6,
+		     rect->bottom - rect->top + 25,
+		     SWP_NOACTIVATE | SWP_NOMOVE |
+		     SWP_NOOWNERZORDER | SWP_NOZORDER);
+	
 	if (debugLevel > 0) {
-	    cerr << "dssi-vst-server[1]: showed window" << endl;
+	    cerr << "dssi-vst-server[1]: sized window" << endl;
+	}
+
+	if (tryGui) {
+	
+	    ShowWindow(hWnd, SW_SHOWNORMAL);
+	    UpdateWindow(hWnd);
+
+	    if (debugLevel > 0) {
+		cerr << "dssi-vst-server[1]: showed window" << endl;
+	    }
+
+	    guiVisible = true;
 	}
     }
 
@@ -981,15 +1193,18 @@ WinMain(HINSTANCE hInst, HINSTANCE hPrevInst, LPSTR cmdline, int cmdshow)
     MSG msg;
     exiting = false;
     while (!exiting) {
+
 	if (PeekMessage(&msg, 0, 0, 0, PM_REMOVE)) {
 	    DispatchMessage(&msg);
 	} else {
-	    if (tryGui) {
+	    if (guiVisible) {
 		usleep(10000);
 	    } else {
-		sleep(1);
+		usleep(500000);
 	    }
 	}
+
+	remoteVSTServerInstance->monitorEdits();
     }
 
     if (debugLevel > 0) {

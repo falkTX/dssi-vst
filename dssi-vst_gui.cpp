@@ -15,389 +15,33 @@
 #include <sys/socket.h>
 #include <fcntl.h>
 #include <sys/un.h>
+#include <sys/poll.h>
 #include <unistd.h>
 
 #include <lo/lo.h>
 #include <lo/lo_lowlevel.h>
 
-#define WIN32_LEAN_AND_MEAN
-#include <windows.h>
-
-#include "aeffectx.h"
-
-#include "paths.h"
-
-#define APPLICATION_CLASS_NAME "dssi_vst"
-#define PLUGIN_ENTRY_POINT "main"
-
-struct Rect {
-    short top;
-    short left;
-    short bottom;
-    short right;
-};
-
-static bool exiting = false;
-static HWND hWnd = 0;
-static double currentSamplePosition = 0.0;
-
-static int bufferSize = 0;
-static int sampleRate = 0;
+#include "rdwrops.h"
 
 static int debugLevel = 3;
+static bool exiting = false;
 
-static AEffect *plugin = 0;
 static lo_server oscserver = 0;
 
 static char *hosturl = 0;
+static lo_address hostaddr = 0;
 static char *hosthostname = 0;
 static char *hostport = 0;
 static char *hostpath = 0;
 
-static std::map<int, float> parameterValues;
-static enum {
-    EditNone,
-    EditStarted,
-    EditFinished
-} editLevel;
+static char *fifoFile = 0;
+static int fifoFd = -1;
 
 using std::cout;
 using std::cerr;
 using std::endl;
 
 #include "remoteplugin.h" // for RemotePluginVersion
-
-
-long VSTCALLBACK
-hostCallback(AEffect *plugin, long opcode, long index,
-	     long value, void *ptr, float opt)
-{
-    static VstTimeInfo timeInfo;
-
-    switch (opcode) {
-
-    case audioMasterAutomate:
-    {
-	float actual = plugin->getParameter(plugin, index);
-	parameterValues[index] = actual;
-	if (debugLevel > 1) {
-	    cerr << "dssi-vst_gui[2]: audioMasterAutomate(" << index << "," << value << ")" << endl;
-	    cerr << "dssi-vst_gui[2]: actual value " << actual << endl;
-	}
-	lo_address hostaddr = lo_address_new(hosthostname, hostport);
-	lo_send(hostaddr,
-		(std::string(hostpath) + "/control").c_str(),
-		"if",
-		index,
-		actual);
-	break;
-    }
-
-    case audioMasterVersion:
-	if (debugLevel > 1)
-	    cerr << "dssi-vst_gui[2]: audioMasterVersion requested" << endl;
-	return 2300;
-
-    case audioMasterCurrentId:
-	if (debugLevel > 1)
-	    cerr << "dssi-vst_gui[2]: audioMasterCurrentId requested" << endl;
-	return 0;
-
-    case audioMasterIdle:
-	if (debugLevel > 1)
-	    cerr << "dssi-vst_gui[2]: audioMasterIdle requested" << endl;
-	plugin->dispatcher(plugin, effEditIdle, 0, 0, 0, 0);
-	break;
-
-    case audioMasterPinConnected:
-	if (debugLevel > 1)
-	    cerr << "dssi-vst_gui[2]: audioMasterPinConnected requested" << endl;
-	break;
-
-    case audioMasterWantMidi:
-	if (debugLevel > 1) {
-	    cerr << "dssi-vst_gui[2]: audioMasterWantMidi requested" << endl;
-	}
-	// happy to oblige
-	return 1;
-
-    case audioMasterGetTime:
-	if (debugLevel > 1)
-	    cerr << "dssi-vst_gui[2]: audioMasterGetTime requested" << endl;
-	timeInfo.samplePos = currentSamplePosition;
-	timeInfo.sampleRate = sampleRate;
-	timeInfo.flags = 0; // don't mark anything valid except default samplePos/Rate
-	return (long)&timeInfo;
-
-    case audioMasterProcessEvents:
-	if (debugLevel > 1)
-	    cerr << "dssi-vst_gui[2]: audioMasterProcessEvents requested" << endl;
-	break;
-
-    case audioMasterSetTime:
-	if (debugLevel > 1)
-	    cerr << "dssi-vst_gui[2]: audioMasterSetTime requested" << endl;
-	break;
-
-    case audioMasterTempoAt:
-	if (debugLevel > 1)
-	    cerr << "dssi-vst_gui[2]: audioMasterTempoAt requested" << endl;
-	// can't support this, return 120bpm
-	return 120 * 10000;
-
-    case audioMasterGetNumAutomatableParameters:
-	if (debugLevel > 1)
-	    cerr << "dssi-vst_gui[2]: audioMasterGetNumAutomatableParameters requested" << endl;
-	return 5000;
-
-    case audioMasterGetParameterQuantization :
-	if (debugLevel > 1)
-	    cerr << "dssi-vst_gui[2]: audioMasterGetParameterQuantization requested" << endl;
-	return 1;
-
-    case audioMasterIOChanged:
-	if (debugLevel > 1)
-	    cerr << "dssi-vst_gui[2]: audioMasterIOChanged requested" << endl;
-	cerr << "WARNING: Plugin inputs and/or outputs changed: NOT SUPPORTED" << endl;
-	break;
-
-    case audioMasterNeedIdle:
-	if (debugLevel > 1) {
-	    cerr << "dssi-vst_gui[2]: audioMasterNeedIdle requested" << endl;
-	}
-	// might be nice to handle this better
-	return 1;
-
-    case audioMasterSizeWindow:
-	if (debugLevel > 1) {
-	    cerr << "dssi-vst_gui[2]: audioMasterSizeWindow requested" << endl;
-	}
-	if (hWnd) {
-	    SetWindowPos(hWnd, 0, 0, 0,
-			 index + 6,
-			 value + 25,
-			 SWP_NOACTIVATE | SWP_NOMOVE |
-			 SWP_NOOWNERZORDER | SWP_NOZORDER);
-	}
-	return 1;
-
-    case audioMasterGetSampleRate:
-	if (debugLevel > 1)
-	    cerr << "dssi-vst_gui[2]: audioMasterGetSampleRate requested" << endl;
-	if (!sampleRate) {
-	    cerr << "WARNING: Sample rate requested but not yet set" << endl;
-	}
-	plugin->dispatcher(plugin, effSetSampleRate,
-			   0, 0, NULL, (float)sampleRate);
-	break;
-
-    case audioMasterGetBlockSize:
-	if (debugLevel > 1)
-	    cerr << "dssi-vst_gui[2]: audioMasterGetBlockSize requested" << endl;
-	if (!bufferSize) {
-	    cerr << "WARNING: Buffer size requested but not yet set" << endl;
-	}
-	plugin->dispatcher(plugin, effSetBlockSize,
-			   0, bufferSize, NULL, 0);
-	break;
-
-    case audioMasterGetInputLatency:
-	if (debugLevel > 1)
-	    cerr << "dssi-vst_gui[2]: audioMasterGetInputLatency requested" << endl;
-	break;
-
-    case audioMasterGetOutputLatency:
-	if (debugLevel > 1)
-	    cerr << "dssi-vst_gui[2]: audioMasterGetOutputLatency requested" << endl;
-	break;
-
-    case audioMasterGetPreviousPlug:
-	if (debugLevel > 1)
-	    cerr << "dssi-vst_gui[2]: audioMasterGetPreviousPlug requested" << endl;
-	break;
-
-    case audioMasterGetNextPlug:
-	if (debugLevel > 1)
-	    cerr << "dssi-vst_gui[2]: audioMasterGetNextPlug requested" << endl;
-	break;
-
-    case audioMasterWillReplaceOrAccumulate:
-	if (debugLevel > 1)
-	    cerr << "dssi-vst_gui[2]: audioMasterWillReplaceOrAccumulate requested" << endl;
-	// 0 -> unsupported, 1 -> replace, 2 -> accumulate
-	return 1;
-
-    case audioMasterGetCurrentProcessLevel:
-	if (debugLevel > 1) {
-	    cerr << "dssi-vst_gui[2]: audioMasterGetCurrentProcessLevel requested" << endl;
-	}
-	// 0 -> unsupported, 1 -> gui, 2 -> process, 3 -> midi/timer, 4 -> offline
-	return 0;
-
-    case audioMasterGetAutomationState:
-	if (debugLevel > 1)
-	    cerr << "dssi-vst_gui[2]: audioMasterGetAutomationState requested" << endl;
-	return 4; // read/write
-
-    case audioMasterOfflineStart:
-	if (debugLevel > 1)
-	    cerr << "dssi-vst_gui[2]: audioMasterOfflineStart requested" << endl;
-	break;
-
-    case audioMasterOfflineRead:
-	if (debugLevel > 1)
-	    cerr << "dssi-vst_gui[2]: audioMasterOfflineRead requested" << endl;
-	break;
-
-    case audioMasterOfflineWrite:
-	if (debugLevel > 1)
-	    cerr << "dssi-vst_gui[2]: audioMasterOfflineWrite requested" << endl;
-	break;
-
-    case audioMasterOfflineGetCurrentPass:
-	if (debugLevel > 1)
-	    cerr << "dssi-vst_gui[2]: audioMasterOfflineGetCurrentPass requested" << endl;
-	break;
-
-    case audioMasterOfflineGetCurrentMetaPass:
-	if (debugLevel > 1)
-	    cerr << "dssi-vst_gui[2]: audioMasterOfflineGetCurrentMetaPass requested" << endl;
-	break;
-
-    case audioMasterSetOutputSampleRate:
-	if (debugLevel > 1)
-	    cerr << "dssi-vst_gui[2]: audioMasterSetOutputSampleRate requested" << endl;
-	break;
-
-    case audioMasterGetSpeakerArrangement:
-	if (debugLevel > 1)
-	    cerr << "dssi-vst_gui[2]: audioMasterGetSpeakerArrangement requested" << endl;
-	break;
-
-    case audioMasterGetVendorString:
-	if (debugLevel > 1)
-	    cerr << "dssi-vst_gui[2]: audioMasterGetVendorString requested" << endl;
-	strcpy((char *)ptr, "Fervent Software");
-	break;
-
-    case audioMasterGetProductString:
-	if (debugLevel > 1)
-	    cerr << "dssi-vst_gui[2]: audioMasterGetProductString requested" << endl;
-	strcpy((char *)ptr, "DSSI VST Wrapper Plugin GUI");
-	break;
-
-    case audioMasterGetVendorVersion:
-	if (debugLevel > 1)
-	    cerr << "dssi-vst_gui[2]: audioMasterGetVendorVersion requested" << endl;
-	return long(RemotePluginVersion * 100);
-
-    case audioMasterVendorSpecific:
-	if (debugLevel > 1)
-	    cerr << "dssi-vst_gui[2]: audioMasterVendorSpecific requested" << endl;
-	break;
-
-    case audioMasterSetIcon:
-	if (debugLevel > 1)
-	    cerr << "dssi-vst_gui[2]: audioMasterSetIcon requested" << endl;
-	break;
-
-    case audioMasterCanDo:
-	if (debugLevel > 1)
-	    cerr << "dssi-vst_gui[2]: audioMasterCanDo(" << (char *)ptr
-		 << ") requested" << endl;
-	if (!strcmp((char*)ptr, "sendVstEvents") ||
-	    !strcmp((char*)ptr, "sendVstMidiEvent") ||
-	    !strcmp((char*)ptr, "sendVstTimeInfo") ||
-	    !strcmp((char*)ptr, "sizeWindow") /* ||
-	    !strcmp((char*)ptr, "supplyIdle") */) {
-	    return 1;
-	}
-	break;
-
-    case audioMasterGetLanguage:
-	if (debugLevel > 1)
-	    cerr << "dssi-vst_gui[2]: audioMasterGetLanguage requested" << endl;
-	return kVstLangEnglish;
-
-    case audioMasterOpenWindow:
-	if (debugLevel > 1)
-	    cerr << "dssi-vst_gui[2]: audioMasterOpenWindow requested" << endl;
-	break;
-
-    case audioMasterCloseWindow:
-	if (debugLevel > 1)
-	    cerr << "dssi-vst_gui[2]: audioMasterCloseWindow requested" << endl;
-	break;
-
-    case audioMasterGetDirectory:
-	if (debugLevel > 1)
-	    cerr << "dssi-vst_gui[2]: audioMasterGetDirectory requested" << endl;
-	break;
-
-    case audioMasterUpdateDisplay:
-	if (debugLevel > 1)
-	    cerr << "dssi-vst_gui[2]: audioMasterUpdateDisplay requested" << endl;
-	break;
-
-    case audioMasterBeginEdit:
-	if (debugLevel > 1)
-	    cerr << "dssi-vst_gui[2]: audioMasterBeginEdit requested" << endl;
-	editLevel = EditStarted;
-	break;
-
-    case audioMasterEndEdit:
-	if (debugLevel > 1)
-	    cerr << "dssi-vst_gui[2]: audioMasterEndEdit requested" << endl;
-	editLevel = EditFinished;
-	break;
-
-    case audioMasterOpenFileSelector:
-	if (debugLevel > 1)
-	    cerr << "dssi-vst_gui[2]: audioMasterOpenFileSelector requested" << endl;
-	break;
-
-    case audioMasterCloseFileSelector:
-	if (debugLevel > 1)
-	    cerr << "dssi-vst_gui[2]: audioMasterCloseFileSelector requested" << endl;
-	break;
-
-    case audioMasterEditFile:
-	if (debugLevel > 1)
-	    cerr << "dssi-vst_gui[2]: audioMasterEditFile requested" << endl;
-	break;
-
-    case audioMasterGetChunkFile:
-	if (debugLevel > 1)
-	    cerr << "dssi-vst_gui[2]: audioMasterGetChunkFile requested" << endl;
-	break;
-
-    case audioMasterGetInputSpeakerArrangement:
-	if (debugLevel > 1)
-	    cerr << "dssi-vst_gui[2]: audioMasterGetInputSpeakerArrangement requested" << endl;
-	break;
-
-    default:
-	if (debugLevel > 0) {
-	    cerr << "dssi-vst_gui[0]: unsupported audioMaster callback opcode "
-		 << opcode << endl;
-	}
-    }
-
-    return 0;
-};
-
-LRESULT WINAPI
-MainProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
-{
-    switch (msg) {
-    case WM_DESTROY:
-	PostQuitMessage(0);
-	exiting = true;
-	return 0;
-    }
-
-    return DefWindowProc(hWnd, msg, wParam, lParam);
-}
 
 void
 osc_error(int num, const char *msg, const char *path)
@@ -429,18 +73,7 @@ int
 program_handler(const char *path, const char *types, lo_arg **argv,
 	       int argc, void *data, void *user_data)
 {
-    if (argc < 2) {
-	cerr << "Error: too few arguments to program_handler" << endl;
-	return 1;
-    }
-
-    const int bank = argv[0]->i;
-    const int program = argv[1]->i;
-
-    cerr << "program_handler(" << bank << "," << program << ")" << endl;
-
-    plugin->dispatcher(plugin, effSetProgram, 0, program, NULL, 0);
-
+    cerr << "dssi-vst_gui: program_handler" << endl;
     return 0;
 }
 
@@ -448,7 +81,7 @@ int
 configure_handler(const char *path, const char *types, lo_arg **argv,
 		  int argc, void *data, void *user_data)
 {
-    cerr << "configure_handler" << endl;
+    cerr << "dssi-vst_gui: configure_handler, returning 0" << endl;
     return 0;
 }
 
@@ -456,16 +89,13 @@ int
 show_handler(const char *path, const char *types, lo_arg **argv,
 	     int argc, void *data, void *user_data)
 {
-    cerr << "show_handler" << endl;
+    cerr << "dssi-vst_gui: show_handler" << endl;
 
-    if (hWnd) {
-	ShowWindow(hWnd, SW_SHOWNORMAL);
-	UpdateWindow(hWnd);
-    }
-
-    if (debugLevel > 0) {
-	cerr << "dssi-vst_gui[1]: showed window" << endl;
-    }
+    lo_send(hostaddr,
+	    (std::string(hostpath) + "/configure").c_str(),
+	    "ss",
+	    "guiVisible",
+	    fifoFile);
 
     return 0;
 }
@@ -474,12 +104,13 @@ int
 hide_handler(const char *path, const char *types, lo_arg **argv,
 	     int argc, void *data, void *user_data)
 {
-    cerr << "hide_handler" << endl;
-    ShowWindow(hWnd, SW_HIDE);
+    cerr << "dssi-vst_gui: hide_handler" << endl;
 
-    if (debugLevel > 0) {
-	cerr << "dssi-vst_gui[1]: hid window" << endl;
-    }
+    lo_send(hostaddr,
+	    (std::string(hostpath) + "/configure").c_str(),
+	    "ss",
+	    "guiVisible",
+	    "");
 
     return 0;
 }
@@ -489,7 +120,6 @@ quit_handler(const char *path, const char *types, lo_arg **argv,
 	     int argc, void *data, void *user_data)
 {
     cerr << "quit_handler" << endl;
-    PostQuitMessage(0);
     exiting = true;
     return 0;
 }
@@ -498,246 +128,101 @@ int
 control_handler(const char *path, const char *types, lo_arg **argv,
 		int argc, void *data, void *user_data)
 {
-    if (argc < 2) {
-	cerr << "Error: too few arguments to control_handler" << endl;
-	return 1;
-    }
-
-    const int port = argv[0]->i;
-    const float value = argv[1]->f;
-
-    cerr << "control_handler(" << port << "," << value << ")" << endl;
-
-    plugin->setParameter(plugin, port, value);
-    parameterValues[port] = value;
-
+    static int count = 0;
+    cerr << "dssi-vst_gui: control_handler " << count++ << endl;
     return 0;
 }
 
-int WINAPI
-WinMain(HINSTANCE hInst, HINSTANCE hPrevInst, LPSTR cmdline, int cmdshow)
+void
+readFromPlugin()
 {
-    cout << "DSSI VST plugin GUI host v" << RemotePluginVersion << endl;
-    cout << "Copyright (c) 2004 Chris Cannam" << endl;
+    cerr << "dssi-vst_gui: something to read from plugin" << endl;
 
-    char *home = getenv("HOME");
+    try {
+	RemotePluginOpcode opcode = RemotePluginNoOpcode;
+	tryRead(fifoFd, &opcode, sizeof(RemotePluginOpcode));
+
+	switch (opcode) {
+
+	case RemotePluginSetParameter:
+	{
+	    int port = readInt(fifoFd);
+	    float value = readFloat(fifoFd);
+
+	    cerr << "dssi-vst_gui: sending (" << port << "," << value << ") to host" << endl;
+
+	    lo_send(hostaddr,
+		    (std::string(hostpath) + "/control").c_str(),
+		    "if", port, value);
+	    break;
+	}
+
+	case RemotePluginTerminate:
+	    cerr << "dssi-vst_gui: asked to terminate" << endl;
+	    lo_send(hostaddr,
+		    (std::string(hostpath) + "/exiting").c_str(),
+		    "");
+	    exiting = true;
+	    break;
+
+	default:
+	    std::cerr << "WARNING: dssi-vst_gui: unexpected opcode "
+		      << opcode << std::endl;
+	    break;
+	}
+    } catch (...) { }
+}
+
+int
+main(int argc, char **argv)
+{
+    cout << "DSSI VST plugin GUI controller v" << RemotePluginVersion << endl;
+    cout << "Copyright (c) 2004 Chris Cannam" << endl;
 
     char *pluginlibname = 0;
     char *label = 0;
     char *friendlyname = 0;
 
-    if (cmdline) {
-	int offset = 0;
-	if (cmdline[0] == '"' || cmdline[0] == '\'') offset = 1;
-	for (int ci = offset; ; ++ci) {
-	    if (isspace(cmdline[ci]) || !cmdline[ci]) {
-		if (!hosturl) hosturl = strndup(cmdline + offset, ci - offset);
-		else if (!pluginlibname) pluginlibname = strndup(cmdline + offset, ci - offset);
-		else if (!label) {
-		    label = strndup(cmdline + offset, ci - offset);
-		    friendlyname = strdup(cmdline + ci + 1);
-		    break;
-		}
-		while (isspace(cmdline[ci])) ++ci;
-		if (!cmdline[ci]) break;
-		offset = ci;
-	    }
-	}
+    if (argc != 5) {
+	cerr << "Usage: dssi-vst_gui <osc url> <plugin.so> <label> <friendlyname>" << endl;
+	exit(2);
     }
-    
-    if (friendlyname && friendlyname[0] != '\0') {
-	if (friendlyname[0] == '"' ||
-	    friendlyname[0] == '\'') {
-	    char *f = friendlyname;
-	    friendlyname = strdup(friendlyname + 1);
-	    free(f);
-	}
-	int l = strlen(friendlyname);
-	if (friendlyname[l-1] == '"' ||
-	    friendlyname[l-1] == '\'') {
-	    friendlyname[l-1] = '\0';
-	}
-    }
+
+    hosturl = argv[1];
+    pluginlibname = argv[2];
+    label = argv[3];
+    friendlyname = argv[4];
 
     if (!hosturl || !hosturl[0] ||
 	!pluginlibname || !pluginlibname[0] ||
 	!label || !label[0] ||
 	!friendlyname || !friendlyname[0]) {
-	cerr << "Usage: dssi-vst_gui <oscurl>,<plugin.so>,<label>,<friendlyname>" << endl;
-	cerr << "(Command line was: " << cmdline << ")" << endl;
+	cerr << "Usage: dssi-vst_gui <osc url> <plugin.so> <label> <friendlyname>" << endl;
 	exit(2);
     }
 
-    // LADSPA labels can't contain spaces (good thing too, as they'd
-    // confuse our command line parsing above!) so dssi-vst replaces
-    // spaces with asterisks.
-    for (int ci = 0; label[ci]; ++ci) {
-	if (label[ci] == '*') label[ci] = ' ';
+    char tmpFileBase[60];
+
+    sprintf(tmpFileBase, "/tmp/rplugin_gui_XXXXXX");
+    if (mkstemp(tmpFileBase) < 0) {
+	cerr << "Failed to obtain temporary filename" << endl;
+	exit(1);
+    }
+    fifoFile = strdup(tmpFileBase);
+
+    unlink(fifoFile);
+    if (mkfifo(fifoFile, 0666)) { //!!! what permission is correct here?
+	perror(fifoFile);
+	cerr << "Failed to create FIFO" << endl;
+	exit(1);
     }
 
-    char *libname = label; // VST libname is in label, DSSI libname in pluginlibname
-
-    cout << "Loading \"" << libname << "\"... ";
-    if (debugLevel > 0) cout << endl;
-
-    HINSTANCE libHandle = 0;
-
-    std::vector<std::string> vstPath = Paths::getPath
-	("VST_PATH", "/usr/local/lib/vst:/usr/lib/vst", "/vst");
-
-    for (size_t i = 0; i < vstPath.size(); ++i) {
-	
-	std::string vstDir = vstPath[i];
-	std::string libPath;
-
-	if (vstDir[vstDir.length()-1] == '/') {
-	    libPath = vstDir + libname;
-	} else {
-	    libPath = vstDir + "/" + libname;
-	}
-
-	libHandle = LoadLibrary(libPath.c_str());
-	if (debugLevel > 0) {
-	    cerr << "dssi-vst_gui[1]: " << (libHandle ? "" : "not ")
-		 << "found in " << libPath << endl;
-	}
-
-	if (!libHandle) {
-	    if (home && home[0] != '\0') {
-		if (libPath.substr(0, strlen(home)) == home) {
-		    libPath = libPath.substr(strlen(home) + 1);
-		}
-		libHandle = LoadLibrary(libPath.c_str());
-		if (debugLevel > 0) {
-		    cerr << "dssi-vst_gui[1]: " << (libHandle ? "" : "not ")
-			 << "found in " << libPath << endl;
-		}
-	    }
-	}
-
-	if (libHandle) break;
-    }	
-
-    if (!libHandle) {
-	libHandle = LoadLibrary(libname);
-	if (debugLevel > 0) {
-	    cerr << "dssi-vst_gui[1]: " << (libHandle ? "" : "not ")
-		 << "found in DLL path" << endl;
-	}
+    if ((fifoFd = open(fifoFile, O_RDONLY | O_NONBLOCK)) < 0) {
+	perror(fifoFile);
+	cerr << "Failed to open FIFO" << endl;
+	unlink(fifoFile);
+	exit(1);
     }
-
-    if (!libHandle) {
-	std::string message = std::string("Failed to load VST DLL \"") + libname + "\"";
-	cerr << "dssi-vst_gui: ERROR: " << message << endl;
-	MessageBox(NULL, message.c_str(), NULL, MB_OK);
-	return 1;
-    }
-
-    cout << "done" << endl;
-
-    cout << "Testing VST compatibility... ";
-    if (debugLevel > 0) cout << endl;
-
-//!!! better debug level support
-    
-    AEffect *(__stdcall* getInstance)(audioMasterCallback);
-    getInstance = (AEffect*(__stdcall*)(audioMasterCallback))
-	GetProcAddress(libHandle, PLUGIN_ENTRY_POINT);
-
-    if (!getInstance) {
-	std::string message = std::string("Bad VST DLL \"") + libname + "\" (entrypoint \""
-	    + PLUGIN_ENTRY_POINT + "\" not found)";
-	cerr << "dssi-vst_gui: ERROR: " << message << endl;
-	MessageBox(NULL, message.c_str(), NULL, MB_OK);
-	return 1;
-    } else if (debugLevel > 0) {
-	cerr << "dssi-vst_gui[1]: VST entrypoint \"" << PLUGIN_ENTRY_POINT
-	     << "\" found" << endl;
-    }
-
-    plugin = getInstance(hostCallback);
-
-    if (!plugin) {
-	cerr << "dssi-vst_gui: ERROR: Failed to instantiate plugin in VST DLL \""
-	     << libname << "\"" << endl;
-	return 1;
-    } else if (debugLevel > 0) {
-	cerr << "dssi-vst_gui[1]: plugin instantiated" << endl;
-    }
-
-    if (plugin->magic != kEffectMagic) {
-	cerr << "dssi-vst_gui: ERROR: Not a VST plugin in DLL \"" << libname << "\"" << endl;
-	return 1;
-    } else if (debugLevel > 0) {
-	cerr << "dssi-vst_gui[1]: plugin is a VST" << endl;
-    }
-
-    if (!(plugin->flags & effFlagsHasEditor)) {
-	std::string message = "No GUI available for this plugin";
-	cerr << "dssi-vst_gui: ERROR: " << message << endl;
-	MessageBox(NULL, message.c_str(), NULL, MB_OK);
-	return 1;
-    } else if (debugLevel > 0) {
-	cerr << "dssi-vst_gui[1]: plugin has a GUI" << endl;
-    }
-
-    cout << "Initialising Windows subsystem... ";
-    if (debugLevel > 0) cout << endl;
-
-    WNDCLASSEX wclass;
-    wclass.cbSize = sizeof(WNDCLASSEX);
-    wclass.style = 0;
-    wclass.lpfnWndProc = MainProc;
-    wclass.cbClsExtra = 0;
-    wclass.cbWndExtra = 0;
-    wclass.hInstance = hInst;
-    wclass.hIcon = LoadIcon(hInst, APPLICATION_CLASS_NAME);
-    wclass.hCursor = LoadCursor(0, IDI_APPLICATION);
-    wclass.hbrBackground = (HBRUSH)GetStockObject(BLACK_BRUSH);
-    wclass.lpszMenuName = "MENU_DSSI_VST";
-    wclass.lpszClassName = APPLICATION_CLASS_NAME;
-    wclass.hIconSm = 0;
-    
-    if (!RegisterClassEx(&wclass)) {
-	cerr << "dssi-vst_gui: ERROR: Failed to register Windows application class!\n" << endl;
-	return 1;
-    } else if (debugLevel > 0) {
-	cerr << "dssi-vst_gui[1]: registered Windows application class \"" << APPLICATION_CLASS_NAME << "\"" << endl;
-    }
-    
-    hWnd = CreateWindow
-	(APPLICATION_CLASS_NAME, friendlyname,
-	 WS_OVERLAPPEDWINDOW & ~WS_THICKFRAME & ~WS_MAXIMIZEBOX,
-	 CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT,
-	 0, 0, hInst, 0);
-    if (!hWnd) {
-	cerr << "dssi-vst_gui: ERROR: Failed to create window!\n" << endl;
-	return 1;
-    } else if (debugLevel > 0) {
-	cerr << "dssi-vst_gui[1]: created main window" << endl;
-    }
-
-    plugin->dispatcher(plugin, effEditOpen, 0, 0, hWnd, 0);
-    Rect *rect = 0;
-    plugin->dispatcher(plugin, effEditGetRect, 0, 0, &rect, 0);
-    if (!rect) {
-	cerr << "dssi-vst_gui: ERROR: Plugin failed to report window size\n" << endl;
-	return 1;
-    }
-
-    // Seems we need to provide space in here for the titlebar and frame,
-    // even though we don't know how big they'll be!  How crap.
-    SetWindowPos(hWnd, 0, 0, 0,
-		 rect->right - rect->left + 6,
-		 rect->bottom - rect->top + 25,
-		 SWP_NOACTIVATE | SWP_NOMOVE |
-		 SWP_NOOWNERZORDER | SWP_NOZORDER);
-
-    if (debugLevel > 0) {
-	cerr << "dssi-vst_gui[1]: sized window" << endl;
-    }
-
-    cout << "done" << endl;
 
     oscserver = lo_server_new(NULL, osc_error);
     lo_server_add_method(oscserver, "/dssi/control", "if", control_handler, 0);
@@ -754,92 +239,41 @@ WinMain(HINSTANCE hInst, HINSTANCE hPrevInst, LPSTR cmdline, int cmdshow)
 
     cout << "created lo server (url is " << lo_server_get_url(oscserver) << ") - update path is " << std::string(hostpath) << "/update" << endl;
 
-    lo_address hostaddr = lo_address_new(hosthostname, hostport);
+    hostaddr = lo_address_new(hosthostname, hostport);
     lo_send(hostaddr,
 	    (std::string(hostpath) + "/update").c_str(),
 	    "s",
 	    (std::string(lo_server_get_url(oscserver)) + "dssi").c_str());
 
-    float **inputs, **outputs;
-
-    if (plugin && plugin->numInputs > 0) {
-	inputs = new float *[plugin->numInputs];
-	for (int i = 0; i < plugin->numInputs; ++i) {
-	    inputs[i] = new float[1024];
-	}
-    } else {
-	inputs = 0;
-    }
-
-    if (plugin && plugin->numOutputs > 0) {
-	outputs = new float *[plugin->numOutputs];
-	for (int i = 0; i < plugin->numOutputs; ++i) {
-	    outputs[i] = new float[1024];
-	}
-    } else {
-	outputs = 0;
-    }
-
-    MSG msg;
     exiting = false;
-    int count = 0;
-    editLevel = EditNone;
+    bool idle = true;
 
     while (!exiting) {
 
-	bool idle = true;
-	
-	if (PeekMessage(&msg, 0, 0, 0, PM_REMOVE)) {
-	    DispatchMessage(&msg);
-	    idle = false;
+	bool idleHere = true;
+
+	struct pollfd pfd;
+	pfd.fd = fifoFd;
+	pfd.events = POLLIN;
+
+	if (poll(&pfd, 1, 0) > 0) {
+	    readFromPlugin();
+	    idleHere = false;
 	}
 
 	if (lo_server_recv_noblock(oscserver, idle ? 30 : 0)) {
-	    idle = false;
+	    idleHere = false;
 	}
 
-	if (editLevel != EditNone) {
-	    
-	    if (editLevel == EditFinished) editLevel = EditNone;
-   
-	    for (std::map<int, float>::iterator i = parameterValues.begin();
-		 i != parameterValues.end(); ++i) {
-		
-		float actual = plugin->getParameter(plugin, i->first);
-
-		if (actual != i->second) {
-		    i->second = actual;
-		    lo_send(hostaddr,
-			    (std::string(hostpath) + "/control").c_str(),
-			    "if",
-			    i->first,
-			    i->second);
-		    idle = false;
-		}
-	    }
-	}
-
-	++count;
-
-	if (idle || count == 50) {
-	    plugin->processReplacing(plugin, inputs, outputs, 1024);
-	    usleep(50);
-	    count = 0;
-	}
-    }
-
-    if (debugLevel > 0) {
-	cerr << "dssi-vst_gui[1]: cleaning up" << endl;
-    }
-
-    FreeLibrary(libHandle);
-    if (debugLevel > 0) {
-	cerr << "dssi-vst_gui[1]: freed dll" << endl;
+	idle = idleHere;
     }
 
     if (debugLevel > 0) {
 	cerr << "dssi-vst_gui[1]: exiting" << endl;
     }
+
+    close(fifoFd);
+    unlink(fifoFile);
 
     return 0;
 }

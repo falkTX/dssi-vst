@@ -58,6 +58,9 @@ public:
     void         setDebugLevel(RemotePluginDebugLevel);
     bool         warn(std::string);
 
+    void         showGUI(std::string guiData);
+    void         hideGUI();
+
 protected:
     RemotePluginClient();
 

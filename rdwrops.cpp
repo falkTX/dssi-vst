@@ -1,3 +1,5 @@
+
+
 // -*- c-basic-offset: 4 -*-
 
 /*
@@ -10,6 +12,7 @@
 #include <errno.h>
 #include <unistd.h>
 
+//#define DEBUG_RDWR 1
 
 extern void
 rdwr_tryRead(int fd, void *buf, size_t count, const char *file, int line)
@@ -35,9 +38,16 @@ rdwr_tryRead(int fd, void *buf, size_t count, const char *file, int line)
 	count -= r;
 
 	if (count > 0) {
-	    usleep(20);
+	    usleep(20000);
 	}
     }
+
+#ifdef DEBUG_RDWR
+    if (r >= count) {
+	fprintf(stderr, "read succeeded at %s:%d (%d bytes)\n",
+		file, line, r);
+    }
+#endif
 }
 
 extern void
@@ -57,6 +67,11 @@ rdwr_tryWrite(int fd, const void *buf, size_t count, const char *file, int line)
 		fd, count, w, file, line);
 	throw RemotePluginClosedException();
     }
+
+#ifdef DEBUG_RDWR
+    fprintf(stderr, "write succeeded at %s:%d (%d bytes)\n",
+	    file, line, w);
+#endif
 }
 
 extern void

@@ -245,6 +245,8 @@ RemotePluginServer::dispatchProcess()
 	int *frameoffsets = 0;
 	unsigned char *data = readMIDIData(m_processFd, &frameoffsets, events);
 	if (events && data && frameoffsets) {
+    std::cerr << "RemotePluginServer::sendMIDIData(" << events << ")" << std::endl;
+
 	    sendMIDIData(data, frameoffsets, events);
 	}
     }
@@ -367,6 +369,18 @@ RemotePluginServer::dispatchControl()
     {
 	bool b = warn(readString(m_controlRequestFd));
 	tryWrite(m_controlResponseFd, &b, sizeof(bool));
+	break;
+    }
+
+    case RemotePluginShowGUI:
+    {
+	showGUI(readString(m_controlRequestFd));
+	break;
+    }
+
+    case RemotePluginHideGUI:
+    {
+	hideGUI();
 	break;
     }
 

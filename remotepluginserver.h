@@ -51,6 +51,9 @@ public:
     virtual void         setDebugLevel(RemotePluginDebugLevel) { return; } 
     virtual bool         warn(std::string) = 0;
 
+    virtual void         showGUI(std::string guiData) { } 
+    virtual void         hideGUI() { }
+
     void dispatch(); // may throw RemotePluginClosedException
 
 protected:

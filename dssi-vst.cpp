@@ -46,6 +46,7 @@ public:
     void selectProgram(unsigned long bank, unsigned long program);
     void runSynth(unsigned long sampleCount,
 		  snd_seq_event_t *events, unsigned long eventCount);
+    std::string configure(std::string key, std::string value);
 
 protected:
     static RemotePluginClient *load(std::string name);
@@ -114,6 +115,9 @@ public:
 
     static void run_synth(LADSPA_Handle instance, unsigned long sampleCount,
 			  snd_seq_event_t *events, unsigned long eventCount);
+
+    static char *configure(LADSPA_Handle instance, const char *key,
+			   const char *value);
 
 private:
     typedef std::pair<std::string, DSSI_Descriptor *> PluginPair;
@@ -308,6 +312,8 @@ DSSIVSTPluginInstance::run(unsigned long sampleCount)
 		if (m_latencyOut) *m_latencyOut = sampleCount;
 	    }
 
+	    int modifiedCount = 0;
+
 	    for (unsigned long i = 0; i < m_controlPortCount; ++i) {
 
 		if (!m_controlPorts[i]) continue;
@@ -316,6 +322,8 @@ DSSIVSTPluginInstance::run(unsigned long sampleCount)
 		    m_plugin->setParameter(i, *m_controlPorts[i]);
 		    m_controlPortsSaved[i] =  *m_controlPorts[i];
 		}
+
+		if (++modifiedCount > 10) break;
 	    }
     
 	    m_plugin->process(m_audioIns, m_audioOuts);
@@ -371,6 +379,23 @@ DSSIVSTPluginInstance::runSynth(unsigned long sampleCount,
     }
 
     run(sampleCount);
+}
+
+std::string
+DSSIVSTPluginInstance::configure(std::string key, std::string value)
+{
+    std::cerr << "DSSIVSTPluginInstance::configure(" << key << "," << value <<")" << std::endl;
+
+    if (key == "guiVisible") {
+	if (value.length() > 0) {
+	    std::cerr << "DSSIVSTPluginInstance::configure: show gui: value " << value << std::endl;
+	    m_plugin->showGUI(value);
+	} else {
+	    std::cerr << "DSSIVSTPluginInstance::configure: hide gui" << std::endl;
+	    m_plugin->hideGUI();
+	}
+    }
+    return "";
 }
 
 void
@@ -502,7 +527,7 @@ DSSIVSTPlugin::DSSIVSTPlugin()
 	ldesc->cleanup = DSSIVSTPlugin::cleanup;
 	
 	descriptor->DSSI_API_Version = 1;
-	descriptor->configure = 0;
+	descriptor->configure = DSSIVSTPlugin::configure;
 	descriptor->get_program = DSSIVSTPlugin::get_program;
 	descriptor->select_program = DSSIVSTPlugin::select_program;
 	descriptor->get_midi_controller_for_port = 0;
@@ -613,6 +638,21 @@ DSSIVSTPlugin::run_synth(LADSPA_Handle instance, unsigned long sampleCount,
     ((DSSIVSTPluginInstance *)instance)->runSynth(sampleCount, events,
 						eventCount);
 }
+
+char *
+DSSIVSTPlugin::configure(LADSPA_Handle instance, const char *key,
+			 const char *value)
+{
+    std::cerr << "DSSIVSTPlugin::configure(" << key << "," << value << ")" << std::endl;
+
+    std::string rv = ((DSSIVSTPluginInstance *)instance)->configure(key, value);
+    if (rv == "") {
+	return NULL;
+    } else {
+	return strdup(rv.c_str());
+    }
+}
+
 
 static DSSIVSTPlugin *_plugin = 0;
 

@@ -396,6 +396,8 @@ RemotePluginClient::sendMIDIData(unsigned char *data, int *frameoffsets, int eve
 	memset(frameoffsets, 0, events * sizeof(int));
     }
 
+    std::cerr << "RemotePluginClient::sendMIDIData(" << events << ")" << std::endl;
+
     tryWrite(m_processFd, frameoffsets, events * sizeof(int));
 }
 
@@ -463,3 +465,17 @@ RemotePluginClient::warn(std::string str)
     tryRead(m_controlResponseFd, &b, sizeof(bool));
     return b;
 }
+
+void
+RemotePluginClient::showGUI(std::string guiData)
+{
+    writeOpcode(m_controlRequestFd, RemotePluginShowGUI);
+    writeString(m_controlRequestFd, guiData);
+}    
+
+void
+RemotePluginClient::hideGUI()
+{
+    writeOpcode(m_controlRequestFd, RemotePluginHideGUI);
+}
+

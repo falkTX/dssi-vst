@@ -14,7 +14,7 @@ VPATH                 = @srcdir@
 
 SUBDIRS               =
 DLLS                  =
-EXES                  = dssi-vst-server.exe dssi-vst-scanner.exe dssi-vst_gui.exe
+EXES                  = dssi-vst-server.exe dssi-vst-scanner.exe
 
 
 ### Common settings
@@ -53,33 +53,6 @@ dssi-vst-server_exe_OBJS       = $(dssi-vst-server_exe_C_SRCS:.c=.o) \
 			$(EXTRA_OBJS)
 
 
-### dssi-vst_gui.exe sources and settings
-
-dssi-vst_gui_exe_MODULE     = dssi-vst_gui.exe
-dssi-vst_gui_exe_APPMODE    = gui
-dssi-vst_gui_exe_C_SRCS     =
-dssi-vst_gui_exe_CXX_SRCS   = dssi-vst_gui.cpp
-dssi-vst_gui_exe_RC_SRCS    =
-dssi-vst_gui_exe_SPEC_SRCS  =
-dssi-vst_gui_exe_DLL_PATH   = -L$(WINE_DLL_ROOT)
-dssi-vst_gui_exe_DLLS       = advapi32 \
-			comdlg32 \
-			gdi32 \
-			kernel32 \
-			odbc32 \
-			ole32 \
-			oleaut32 \
-			shell32 \
-			user32 \
-			winspool
-dssi-vst_gui_exe_LIBRARY_PATH= 
-dssi-vst_gui_exe_LIBRARIES  = lo
-dssi-vst_gui_exe_DEPENDS    =
-
-dssi-vst_gui_exe_OBJS       = $(dssi-vst_gui_exe_C_SRCS:.c=.o) \
-			$(dssi-vst_gui_exe_CXX_SRCS:.cpp=.o) \
-			$(EXTRA_OBJS)
-
 
 ### dssi-vst-scanner.exe sources and settings
 
@@ -112,28 +85,28 @@ dssi-vst-scanner_exe_OBJS       = $(dssi-vst-scanner_exe_C_SRCS:.c=.o) \
 
 ### Global source lists
 
-C_SRCS                = $(dssi-vst-server_exe_C_SRCS) $(dssi-vst-scanner_exe_C_SRCS) $(dssi-vst_gui_exe_C_SRCS)
-CXX_SRCS              = $(dssi-vst-server_exe_CXX_SRCS) $(dssi-vst-scanner_exe_CXX_SRCS) $(dssi-vst_gui_exe_CXX_SRCS)
-RC_SRCS               = $(dssi-vst-server_exe_RC_SRCS) $(dssi-vst-scanner_exe_RC_SRCS) $(dssi-vst_gui_exe_RC_SRCS)
-SPEC_SRCS             = $(dssi-vst-server_exe_SPEC_SRCS) $(dssi-vst-scanner_exe_SPEC_SRCS) $(dssi-vst_gui_exe_SPEC_SRCS)
+C_SRCS                = $(dssi-vst-server_exe_C_SRCS) $(dssi-vst-scanner_exe_C_SRCS)
+CXX_SRCS              = $(dssi-vst-server_exe_CXX_SRCS) $(dssi-vst-scanner_exe_CXX_SRCS)
+RC_SRCS               = $(dssi-vst-server_exe_RC_SRCS) $(dssi-vst-scanner_exe_RC_SRCS)
+SPEC_SRCS             = $(dssi-vst-server_exe_SPEC_SRCS) $(dssi-vst-scanner_exe_SPEC_SRCS)
 
 
 
 ### Generic autoconf targets
 
-all: apploader $(SUBDIRS) $(DLLS:%=%.so) $(EXES:%=%.so) vsthost libremoteplugin.a dssi-vst.so
+all: apploader $(SUBDIRS) $(DLLS:%=%.so) $(EXES:%=%.so) vsthost dssi-vst_gui libremoteplugin.a dssi-vst.so
 
 apploader: apploader.in
 	sed -e 's,@bindir\@,$(bindir),g' -e 's,@winelibdir\@,.,g' $(SRCDIR)/apploader.in >$@ || $(RM) $@
 
 @MAKE_RULES@
 
-install:: dssi-vst.so dssi-vst-scanner.exe.so dssi-vst-server.exe.so dssi-vst_gui.exe.so apploader
+install:: dssi-vst.so dssi-vst-scanner.exe.so dssi-vst-server.exe.so dssi-vst_gui apploader
 	$(MKDIR) $(TARGET_DSSI_DIR)
 	$(INSTALL) dssi-vst.so $(TARGET_DSSI_DIR)
 	$(MKDIR) $(TARGET_DSSI_DIR)/dssi-vst
-	$(INSTALL) dssi-vst-scanner.exe.so dssi-vst-server.exe.so dssi-vst_gui.exe.so apploader $(TARGET_DSSI_DIR)/dssi-vst/
-	( cd $(TARGET_DSSI_DIR)/dssi-vst/ ; rm -f dssi-vst-scanner dssi-vst-server dssi-vst_gui ; ln -s apploader dssi-vst-scanner ; ln -s apploader dssi-vst-server ; ln -s apploader dssi-vst_gui ; chmod a+x * ../dssi-vst.so )
+	$(INSTALL) dssi-vst-scanner.exe.so dssi-vst-server.exe.so dssi-vst_gui apploader $(TARGET_DSSI_DIR)/dssi-vst/
+	( cd $(TARGET_DSSI_DIR)/dssi-vst/ ; rm -f dssi-vst-scanner dssi-vst-server ; ln -s apploader dssi-vst-scanner ; ln -s apploader dssi-vst-server ; chmod a+x * ../dssi-vst.so )
 
 uninstall::
 	$(RM) $(TARGET_DSSI_DIR)/dssi-vst.so
@@ -157,17 +130,6 @@ $(dssi-vst-server_exe_MODULE).spec.c: $(dssi-vst-server_exe_SPEC_SRCS) $(dssi-vs
 
 $(dssi-vst-server_exe_MODULE).so: $(dssi-vst-server_exe_MODULE).dbg.o $(dssi-vst-server_exe_MODULE).spec.o $(dssi-vst-server_exe_OBJS) $(dssi-vst-server_exe_DEPENDS)
 	$(LDXXSHARED) $(LDDLLFLAGS) -o $@ $(dssi-vst-server_exe_OBJS) $(dssi-vst-server_exe_MODULE).dbg.o $(dssi-vst-server_exe_MODULE).spec.o $(dssi-vst-server_exe_LIBRARY_PATH) $(ALL_LIBRARY_PATH) $(dssi-vst-server_exe_LIBRARIES:%=-l%) $(ALL_LIBRARIES) $(LIBS)
-
-### Target specific build rules
-
-$(dssi-vst_gui_exe_MODULE).dbg.c: $(dssi-vst_gui_exe_C_SRCS) $(dssi-vst_gui_exe_CXX_SRCS)
-	$(LDPATH) $(WINEBUILD) -o $@ --debug -C$(SRCDIR) $(dssi-vst_gui_exe_C_SRCS) $(dssi-vst_gui_exe_CXX_SRCS)
-
-$(dssi-vst_gui_exe_MODULE).spec.c: $(dssi-vst_gui_exe_SPEC_SRCS) $(dssi-vst_gui_exe_RC_SRCS:.rc=.res) $(dssi-vst_gui_exe_OBJS)
-	$(LDPATH) $(WINEBUILD) -fPIC -o $@ --exe $(dssi-vst_gui_exe_MODULE) -m$(dssi-vst_gui_exe_APPMODE) $(dssi-vst_gui_exe_SPEC_SRCS:%=--spec %) $(dssi-vst_gui_exe_RC_SRCS:%.rc=%.res) $(dssi-vst_gui_exe_OBJS) $(dssi-vst_gui_exe_DLL_PATH) $(WINE_DLL_PATH) $(GLOBAL_DLL_PATH) $(dssi-vst_gui_exe_DLLS:%=-l%) $(GLOBAL_DLLS:%=-l%)
-
-$(dssi-vst_gui_exe_MODULE).so: $(dssi-vst_gui_exe_MODULE).dbg.o $(dssi-vst_gui_exe_MODULE).spec.o $(dssi-vst_gui_exe_OBJS) $(dssi-vst_gui_exe_DEPENDS)
-	$(LDXXSHARED) $(LDDLLFLAGS) -o $@ $(dssi-vst_gui_exe_OBJS) $(dssi-vst_gui_exe_MODULE).dbg.o $(dssi-vst_gui_exe_MODULE).spec.o $(dssi-vst_gui_exe_LIBRARY_PATH) $(ALL_LIBRARY_PATH) $(dssi-vst_gui_exe_LIBRARIES:%=-l%) $(ALL_LIBRARIES) $(LIBS)
 
 ### Target specific build rules
 
@@ -198,8 +160,11 @@ remotepluginserver.o:	remotepluginserver.cpp remotepluginserver.h remoteplugin.h
 	g++ -g3 -Wall remotepluginserver.cpp -c
 
 dssi-vst-server.o:	remoteplugin.h remotepluginserver.h libremoteplugin.a
-dssi-vst_gui.o:	remoteplugin.h remotepluginserver.h libremoteplugin.a
 dssi-vst-scanner.o:	remoteplugin.h remotepluginserver.h libremoteplugin.a
 
 dssi-vst.so:	remoteplugin.h remotepluginclient.h libremoteplugin.a dssi-vst.cpp remotevstclient.o
 	g++ -shared -Wl,-Bsymbolic -g3 -Wall -o dssi-vst.so dssi-vst.cpp remotevstclient.o  -L. -lremoteplugin -lasound
+
+dssi-vst_gui:	dssi-vst_gui.cpp
+	g++ -g3 -Wall dssi-vst_gui.cpp rdwrops.o -o dssi-vst_gui -llo
+
