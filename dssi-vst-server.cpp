@@ -54,7 +54,7 @@ static int bufferSize = 0;
 static int sampleRate = 0;
 static bool guiVisible = false;
 
-static RemotePluginDebugLevel debugLevel = RemotePluginDebugEvents;
+static RemotePluginDebugLevel debugLevel = RemotePluginDebugSetup;
 static pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
 
 using namespace std;
@@ -489,7 +489,9 @@ RemoteVSTServer::warn(std::string warning)
 void
 RemoteVSTServer::showGUI(std::string guiData)
 {
-    cerr << "RemoteVSTServer::showGUI(" << guiData << "): guiVisible is " << guiVisible << endl;
+    if (debugLevel > 0) {
+	cerr << "RemoteVSTServer::showGUI(" << guiData << "): guiVisible is " << guiVisible << endl;
+    }
 
     if (guiVisible) return;
 
@@ -613,7 +615,9 @@ RemoteVSTServer::notifyGUI(int index, float value)
 {
     if (m_guiFifoFd >= 0) {
 
-	cerr << "RemoteVSTServer::notifyGUI(" << index << "," << value << "): about to lock" << endl;
+	if (debugLevel > 1) {
+	    cerr << "RemoteVSTServer::notifyGUI(" << index << "," << value << "): about to lock" << endl;
+	}
 
 	try {
 	    writeOpcode(m_guiFifoFd, RemotePluginSetParameter);
@@ -628,7 +632,9 @@ RemoteVSTServer::notifyGUI(int index, float value)
 	    hideGUI();
 	}
 
-	cerr << "wrote (" << index << "," << value << ") to gui (" << m_guiEventsExpected << " events expected now)" << endl;
+	if (debugLevel > 1) {
+	    cerr << "wrote (" << index << "," << value << ") to gui (" << m_guiEventsExpected << " events expected now)" << endl;
+	}
     }
 }
 
