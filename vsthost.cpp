@@ -376,9 +376,10 @@ openJack(const char *pluginName)
     if (jackData.input_count > 0) {
 
 	jackData.input_ports = new jack_port_t*[jackData.input_count];
-	jackData.input_buffers = new float*[jackData.input_count](0);
+	jackData.input_buffers = new float*[jackData.input_count];
 
 	for (int i = 0; i < jackData.input_count; ++i) {
+	    jackData.input_buffers[i] = 0;
 	    snprintf(portName, 100, "in_%d", i+1);
 	    jackData.input_ports[i] = jack_port_register
 		(jackData.client, portName,
@@ -393,9 +394,10 @@ openJack(const char *pluginName)
     if (jackData.output_count > 0) {
 
 	jackData.output_ports = new jack_port_t*[jackData.output_count];
-	jackData.output_buffers = new float*[jackData.output_count](0);
+	jackData.output_buffers = new float*[jackData.output_count];
 
 	for (int i = 0; i < jackData.output_count; ++i) {
+	    jackData.output_buffers[i] = 0;
 	    snprintf(portName, 100, "out_%d", i+1);
 	    jackData.output_ports[i] = jack_port_register
 		(jackData.client, portName,
