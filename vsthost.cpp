@@ -494,6 +494,8 @@ main(int argc, char **argv)
 
     if (!dllname) usage();
 
+    setsid();
+
     struct sigaction sa;
     sa.sa_handler = bail;
     sigemptyset(&sa.sa_mask);
