@@ -2,7 +2,7 @@
 
 /*
   dssi-vst: a DSSI plugin wrapper for VST effects and instruments
-  Copyright 2004 Chris Cannam
+  Copyright 2004-2006 Chris Cannam
 */
 
 #include <iostream>
@@ -26,14 +26,27 @@
 #include "paths.h"
 
 #define APPLICATION_CLASS_NAME "dssi_vst"
-#define PLUGIN_ENTRY_POINT "main"
+#define OLD_PLUGIN_ENTRY_POINT "main"
+#define NEW_PLUGIN_ENTRY_POINT "VSTPluginMain"
+
+#if VST_FORCE_DEPRECATED
+#define DEPRECATED_VST_SYMBOL(x) __##x##Deprecated
+#else
+#define DEPRECATED_VST_SYMBOL(x) x
+#endif
 
 using namespace std;
 
 
+#if VST_2_4_EXTENSIONS
+VstIntPtr VSTCALLBACK
+hostCallback(AEffect *plugin, VstInt32 opcode, VstInt32 index,
+	     VstIntPtr value, void *ptr, float opt)
+#else
 long VSTCALLBACK
 hostCallback(AEffect *plugin, long opcode, long index,
 	     long value, void *ptr, float opt)
+#endif
 {
     static VstTimeInfo timeInfo;
 
@@ -72,7 +85,7 @@ hostCallback(AEffect *plugin, long opcode, long index,
 	timeInfo.flags = 0; // don't mark anything valid except default samplePos/Rate
 	return (long)&timeInfo;
 
-    case audioMasterTempoAt:
+    case DEPRECATED_VST_SYMBOL(audioMasterTempoAt):
 	// can't support this, return 120bpm
 	return 120 * 10000;
 
@@ -86,7 +99,7 @@ hostCallback(AEffect *plugin, long opcode, long index,
 			   0, 1024, NULL, 0);
 	break;
 
-    case audioMasterWillReplaceOrAccumulate:
+    case DEPRECATED_VST_SYMBOL(audioMasterWillReplaceOrAccumulate):
 	// 0 -> unsupported, 1 -> replace, 2 -> accumulate
 	return 1;
 
@@ -94,15 +107,13 @@ hostCallback(AEffect *plugin, long opcode, long index,
 	// 0 -> unsupported, 1 -> gui, 2 -> process, 3 -> midi/timer, 4 -> offline
 	return 1;
 
-    case audioMasterGetParameterQuantization:
+    case DEPRECATED_VST_SYMBOL(audioMasterGetParameterQuantization):
+	return 1;
+	
+    case DEPRECATED_VST_SYMBOL(audioMasterNeedIdle):
 	return 1;
 
-    case audioMasterNeedIdle:
-	// might be nice to handle this better
-	return 1;
-
-    case audioMasterWantMidi:
-	// happy to oblige
+    case DEPRECATED_VST_SYMBOL(audioMasterWantMidi):
 	return 1;
 
     default:
@@ -118,7 +129,7 @@ WinMain(HINSTANCE hInst, HINSTANCE hPrevInst, LPSTR cmdline, int cmdshow)
     char *destFile = 0;
 
     cout << "DSSI VST plugin scanner v0.3" << endl;
-    cout << "Copyright (c) 2004 Chris Cannam - Fervent Software" << endl;
+    cout << "Copyright (c) 2004-2006 Chris Cannam - Fervent Software" << endl;
 
     if (cmdline && cmdline[0]) destFile = strdup(cmdline);
     
@@ -272,12 +283,19 @@ WinMain(HINSTANCE hInst, HINSTANCE hPrevInst, LPSTR cmdline, int cmdshow)
 		}
 
 		getInstance = (AEffect*(__stdcall*)(audioMasterCallback))
-		    GetProcAddress(libHandle, PLUGIN_ENTRY_POINT);
+		    GetProcAddress(libHandle, NEW_PLUGIN_ENTRY_POINT);
 
 		if (!getInstance) {
-		    cerr << "dssi-vst-scanner: VST entrypoint \"" << PLUGIN_ENTRY_POINT
-			 << "\" not found in DLL \"" << libPath << "\"" << endl;
-		    goto done;
+		    getInstance = (AEffect*(__stdcall*)(audioMasterCallback))
+			GetProcAddress(libHandle, OLD_PLUGIN_ENTRY_POINT);
+
+		    if (!getInstance) {
+			cerr << "dssi-vst-scanner: VST entrypoints \""
+			     << NEW_PLUGIN_ENTRY_POINT << "\" or \"" 
+			     << OLD_PLUGIN_ENTRY_POINT << "\" not found in DLL \""
+			     << libname << "\"" << endl;
+			goto done;
+		    }
 		}
 
 		plugin = getInstance(hostCallback);

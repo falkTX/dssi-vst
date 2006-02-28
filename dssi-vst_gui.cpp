@@ -2,7 +2,7 @@
 
 /*
   dssi-vst: a DSSI plugin wrapper for VST effects and instruments
-  Copyright 2004 Chris Cannam
+  Copyright 2004-2006 Chris Cannam
 */
 
 #include <iostream>
@@ -184,7 +184,7 @@ int
 main(int argc, char **argv)
 {
     cout << "DSSI VST plugin GUI controller v" << RemotePluginVersion << endl;
-    cout << "Copyright (c) 2004 Chris Cannam" << endl;
+    cout << "Copyright (c) 2004-2006 Chris Cannam" << endl;
 
     char *pluginlibname = 0;
     char *label = 0;

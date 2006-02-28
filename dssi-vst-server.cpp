@@ -2,7 +2,7 @@
 
 /*
   dssi-vst: a DSSI plugin wrapper for VST effects and instruments
-  Copyright 2004 Chris Cannam
+  Copyright 2004-2006 Chris Cannam
 */
 
 #include <iostream>
@@ -33,7 +33,14 @@
 #include "rdwrops.h"
 
 #define APPLICATION_CLASS_NAME "dssi_vst"
-#define PLUGIN_ENTRY_POINT "main"
+#define OLD_PLUGIN_ENTRY_POINT "main"
+#define NEW_PLUGIN_ENTRY_POINT "VSTPluginMain"
+
+#if VST_FORCE_DEPRECATED
+#define DEPRECATED_VST_SYMBOL(x) __##x##Deprecated
+#else
+#define DEPRECATED_VST_SYMBOL(x) x
+#endif
 
 struct Rect {
     short top;
@@ -672,9 +679,15 @@ RemoteVSTServer::terminateGUIProcess()
     }
 }
 
+#if VST_2_4_EXTENSIONS
+VstIntPtr VSTCALLBACK
+hostCallback(AEffect *plugin, VstInt32 opcode, VstInt32 index,
+	     VstIntPtr value, void *ptr, float opt)
+#else
 long VSTCALLBACK
 hostCallback(AEffect *plugin, long opcode, long index,
 	     long value, void *ptr, float opt)
+#endif
 {
     static VstTimeInfo timeInfo;
     int rv = 0;
@@ -728,7 +741,7 @@ hostCallback(AEffect *plugin, long opcode, long index,
 	    cerr << "dssi-vst-server[2]: audioMasterPinConnected requested" << endl;
 	break;
 
-    case audioMasterWantMidi:
+    case DEPRECATED_VST_SYMBOL(audioMasterWantMidi):
 	if (debugLevel > 1) {
 	    cerr << "dssi-vst-server[2]: audioMasterWantMidi requested" << endl;
 	}
@@ -750,25 +763,25 @@ hostCallback(AEffect *plugin, long opcode, long index,
 	    cerr << "dssi-vst-server[2]: audioMasterProcessEvents requested" << endl;
 	break;
 
-    case audioMasterSetTime:
+    case DEPRECATED_VST_SYMBOL(audioMasterSetTime):
 	if (debugLevel > 1)
 	    cerr << "dssi-vst-server[2]: audioMasterSetTime requested" << endl;
 	break;
 
-    case audioMasterTempoAt:
+    case DEPRECATED_VST_SYMBOL(audioMasterTempoAt):
 	if (debugLevel > 1)
 	    cerr << "dssi-vst-server[2]: audioMasterTempoAt requested" << endl;
 	// can't support this, return 120bpm
 	rv = 120 * 10000;
 	break;
 
-    case audioMasterGetNumAutomatableParameters:
+    case DEPRECATED_VST_SYMBOL(audioMasterGetNumAutomatableParameters):
 	if (debugLevel > 1)
 	    cerr << "dssi-vst-server[2]: audioMasterGetNumAutomatableParameters requested" << endl;
 	rv = 5000;
 	break;
 
-    case audioMasterGetParameterQuantization :
+    case DEPRECATED_VST_SYMBOL(audioMasterGetParameterQuantization):
 	if (debugLevel > 1)
 	    cerr << "dssi-vst-server[2]: audioMasterGetParameterQuantization requested" << endl;
 	rv = 1;
@@ -780,7 +793,7 @@ hostCallback(AEffect *plugin, long opcode, long index,
 	cerr << "WARNING: Plugin inputs and/or outputs changed: NOT SUPPORTED" << endl;
 	break;
 
-    case audioMasterNeedIdle:
+    case DEPRECATED_VST_SYMBOL(audioMasterNeedIdle):
 	if (debugLevel > 1) {
 	    cerr << "dssi-vst-server[2]: audioMasterNeedIdle requested" << endl;
 	}
@@ -832,17 +845,17 @@ hostCallback(AEffect *plugin, long opcode, long index,
 	    cerr << "dssi-vst-server[2]: audioMasterGetOutputLatency requested" << endl;
 	break;
 
-    case audioMasterGetPreviousPlug:
+    case DEPRECATED_VST_SYMBOL(audioMasterGetPreviousPlug):
 	if (debugLevel > 1)
 	    cerr << "dssi-vst-server[2]: audioMasterGetPreviousPlug requested" << endl;
 	break;
 
-    case audioMasterGetNextPlug:
+    case DEPRECATED_VST_SYMBOL(audioMasterGetNextPlug):
 	if (debugLevel > 1)
 	    cerr << "dssi-vst-server[2]: audioMasterGetNextPlug requested" << endl;
 	break;
 
-    case audioMasterWillReplaceOrAccumulate:
+    case DEPRECATED_VST_SYMBOL(audioMasterWillReplaceOrAccumulate):
 	if (debugLevel > 1)
 	    cerr << "dssi-vst-server[2]: audioMasterWillReplaceOrAccumulate requested" << endl;
 	// 0 -> unsupported, 1 -> replace, 2 -> accumulate
@@ -889,16 +902,18 @@ hostCallback(AEffect *plugin, long opcode, long index,
 	    cerr << "dssi-vst-server[2]: audioMasterOfflineGetCurrentMetaPass requested" << endl;
 	break;
 
-    case audioMasterSetOutputSampleRate:
+    case DEPRECATED_VST_SYMBOL(audioMasterSetOutputSampleRate):
 	if (debugLevel > 1)
 	    cerr << "dssi-vst-server[2]: audioMasterSetOutputSampleRate requested" << endl;
 	break;
 
+/* Deprecated in VST 2.4 and also (accidentally?) renamed in the SDK header,
+   so we won't retain it here
     case audioMasterGetSpeakerArrangement:
 	if (debugLevel > 1)
 	    cerr << "dssi-vst-server[2]: audioMasterGetSpeakerArrangement requested" << endl;
 	break;
-
+*/
     case audioMasterGetVendorString:
 	if (debugLevel > 1)
 	    cerr << "dssi-vst-server[2]: audioMasterGetVendorString requested" << endl;
@@ -922,7 +937,7 @@ hostCallback(AEffect *plugin, long opcode, long index,
 	    cerr << "dssi-vst-server[2]: audioMasterVendorSpecific requested" << endl;
 	break;
 
-    case audioMasterSetIcon:
+    case DEPRECATED_VST_SYMBOL(audioMasterSetIcon):
 	if (debugLevel > 1)
 	    cerr << "dssi-vst-server[2]: audioMasterSetIcon requested" << endl;
 	break;
@@ -946,12 +961,12 @@ hostCallback(AEffect *plugin, long opcode, long index,
 	rv = kVstLangEnglish;
 	break;
 
-    case audioMasterOpenWindow:
+    case DEPRECATED_VST_SYMBOL(audioMasterOpenWindow):
 	if (debugLevel > 1)
 	    cerr << "dssi-vst-server[2]: audioMasterOpenWindow requested" << endl;
 	break;
 
-    case audioMasterCloseWindow:
+    case DEPRECATED_VST_SYMBOL(audioMasterCloseWindow):
 	if (debugLevel > 1)
 	    cerr << "dssi-vst-server[2]: audioMasterCloseWindow requested" << endl;
 	break;
@@ -988,17 +1003,17 @@ hostCallback(AEffect *plugin, long opcode, long index,
 	    cerr << "dssi-vst-server[2]: audioMasterCloseFileSelector requested" << endl;
 	break;
 
-    case audioMasterEditFile:
+    case DEPRECATED_VST_SYMBOL(audioMasterEditFile):
 	if (debugLevel > 1)
 	    cerr << "dssi-vst-server[2]: audioMasterEditFile requested" << endl;
 	break;
 
-    case audioMasterGetChunkFile:
+    case DEPRECATED_VST_SYMBOL(audioMasterGetChunkFile):
 	if (debugLevel > 1)
 	    cerr << "dssi-vst-server[2]: audioMasterGetChunkFile requested" << endl;
 	break;
 
-    case audioMasterGetInputSpeakerArrangement:
+    case DEPRECATED_VST_SYMBOL(audioMasterGetInputSpeakerArrangement):
 	if (debugLevel > 1)
 	    cerr << "dssi-vst-server[2]: audioMasterGetInputSpeakerArrangement requested" << endl;
 	break;
@@ -1045,6 +1060,7 @@ WatchdogThreadMain(LPVOID parameter)
 
     param.sched_priority = 0;
     (void)sched_setscheduler(0, SCHED_OTHER, &param);
+    return 0;
 }
 
 DWORD WINAPI
@@ -1117,7 +1133,7 @@ WinMain(HINSTANCE hInst, HINSTANCE hPrevInst, LPSTR cmdline, int cmdshow)
     bool tryGui = false, haveGui = true;
 
     cout << "DSSI VST plugin server v" << RemotePluginVersion << endl;
-    cout << "Copyright (c) 2004 Chris Cannam - Fervent Software" << endl;
+    cout << "Copyright (c) 2004-2006 Chris Cannam - Fervent Software" << endl;
 
     char *home = getenv("HOME");
 
@@ -1218,16 +1234,35 @@ WinMain(HINSTANCE hInst, HINSTANCE hPrevInst, LPSTR cmdline, int cmdshow)
 //!!! better debug level support
     
     AEffect *(__stdcall* getInstance)(audioMasterCallback);
+
     getInstance = (AEffect*(__stdcall*)(audioMasterCallback))
-	GetProcAddress(libHandle, PLUGIN_ENTRY_POINT);
+	GetProcAddress(libHandle, NEW_PLUGIN_ENTRY_POINT);
 
     if (!getInstance) {
-	cerr << "dssi-vst-server: ERROR: VST entrypoint \"" << PLUGIN_ENTRY_POINT
-	     << "\" not found in DLL \"" << libname << "\"" << endl;
-	return 1;
+	if (debugLevel > 0) {
+	    cerr << "dssi-vst-server[1]: VST 2.4 entrypoint \""
+		 << NEW_PLUGIN_ENTRY_POINT << "\" not found in DLL \""
+		 << libname << "\", looking for \""
+		 << OLD_PLUGIN_ENTRY_POINT << "\"" << endl;
+	}
+
+	getInstance = (AEffect*(__stdcall*)(audioMasterCallback))
+	    GetProcAddress(libHandle, OLD_PLUGIN_ENTRY_POINT);
+
+	if (!getInstance) {
+	    cerr << "dssi-vst-server: ERROR: VST entrypoints \""
+		 << NEW_PLUGIN_ENTRY_POINT << "\" or \"" 
+		 << OLD_PLUGIN_ENTRY_POINT << "\" not found in DLL \""
+		 << libname << "\"" << endl;
+	    return 1;
+	} else if (debugLevel > 0) {
+	    cerr << "dssi-vst-server[1]: VST entrypoint \""
+		 << OLD_PLUGIN_ENTRY_POINT << "\" found" << endl;
+	}
+
     } else if (debugLevel > 0) {
-	cerr << "dssi-vst-server[1]: VST entrypoint \"" << PLUGIN_ENTRY_POINT
-	     << "\" found" << endl;
+	cerr << "dssi-vst-server[1]: VST entrypoint \""
+	     << NEW_PLUGIN_ENTRY_POINT << "\" found" << endl;
     }
 
     AEffect *plugin = getInstance(hostCallback);
@@ -1287,7 +1322,7 @@ WinMain(HINSTANCE hInst, HINSTANCE hPrevInst, LPSTR cmdline, int cmdshow)
     wclass.hInstance = hInst;
     wclass.hIcon = LoadIcon(hInst, APPLICATION_CLASS_NAME);
     wclass.hCursor = LoadCursor(0, IDI_APPLICATION);
-    wclass.hbrBackground = (HBRUSH)GetStockObject(BLACK_BRUSH);
+//    wclass.hbrBackground = (HBRUSH)GetStockObject(BLACK_BRUSH);
     wclass.lpszMenuName = "MENU_DSSI_VST";
     wclass.lpszClassName = APPLICATION_CLASS_NAME;
     wclass.hIconSm = 0;

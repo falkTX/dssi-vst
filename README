@@ -3,12 +3,14 @@ dssi-vst: a DSSI plugin wrapper for VST plugins
 ===============================================
 
 This is a DSSI plugin wrapper for VST effects and instruments with GUI
-support.  Copyright (c) 2004 Chris Cannam.
+support.  Copyright (c) 2004-2006 Chris Cannam, Fervent Software Ltd.
 
-This is the 0.3.1 release of dssi-vst.  The main improvement since the
-initial 0.1 release is that dssi-vst now works correctly with VSTs
-that have complex GUIs using back-channels to communicate things like
-patch information to the audio plugin.
+This is the 0.4 release of dssi-vst.
+
+The main change since the 0.3.1 release is that dssi-vst now builds
+with newer versions of the Wine tools (Wine 0.9.5 or newer is
+required).  This release also builds with version 2.4 of the VST SDK,
+although it should still work with the older 2.3 as well.
 
 
 Build etc
@@ -16,20 +18,20 @@ Build etc
 
 To build dssi-vst, you will need:
 
-* The dssi.h header.
+* The DSSI header.
 
-* A reasonably recent version of Wine (anything from the start of 2004
-  onwards is probably OK) -- http://www.winehq.com/
+* Wine 0.9.5 or newer -- http://www.winehq.com/
 
-* Steve Harris's liblo "Lite OSC" library -- http://liblo.sf.net/.
-  You will need version 0.9 or newer.
+* Steve Harris's liblo "Lite OSC" library -- http://liblo.sf.net/ -- 
+  version 0.9 or newer.
 
-* The VST SDK headers -- http://www.steinberg.net/steinberg/ygrabit/index.html
-  These are free but not redistributable.
+* The VST SDK headers -- http://www.steinberg.de/Steinberg/Developers8b99.html
+  These are free to download, but you need to agree to Steinberg's
+  licensing terms and you may not redistribute them.  Unzip the SDK
+  into the current directory (creating a subdirectory called vstsdk2.4).
 
-Once you have all of the above, edit Makefile.in to specify the VST
-SDK location; then you should be able to build and install by running
-autoconf ; ./configure ; make ; make install.
+Once you have all of the above, you should be able to build and
+install by running "make" then "make install".
 
 To use dssi-vst: make sure DSSI_PATH is set appropriately, set
 VST_PATH to a colon-separated list of the directories containing VST
@@ -67,7 +69,7 @@ delivering to separate VST MIDI channels using run_multiple_synths to
 share the VST plugin.
 
 Does not communicate tempo and beat information to the VST plugin (the
-VST API has a mechanism for this, but DSSI does not).
+VST API has a mechanism for this, but DSSI does not... yet).
 
 Has a tendency to leave FIFOs and shared-memory files lying around in
 the temporary directory (/tmp or /var/tmp).  You may want to go and
