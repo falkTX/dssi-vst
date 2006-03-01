@@ -1,5 +1,6 @@
 
 DSSIDIR		= /usr/local/lib/dssi
+BINDIR		= /usr/local/bin
 CXXFLAGS	= -I./vstsdk2.4/pluginterfaces/vst2.x -Wall
 LDFLAGS		= 
 
@@ -26,8 +27,10 @@ all:		$(TARGETS)
 
 install:	all
 		mkdir -p $(DSSIDIR)/dssi-vst
+		mkdir -p $(BINDIR)
 		install dssi-vst.so $(DSSIDIR)
 		install dssi-vst-server.exe.so dssi-vst-server dssi-vst-scanner.exe.so dssi-vst-scanner dssi-vst_gui $(DSSIDIR)/dssi-vst
+		install vsthost $(BINDIR)
 
 clean:
 		rm -f $(OBJECTS) libremoteplugin.a
