@@ -56,7 +56,7 @@ hostCallback(AEffect *plugin, long opcode, long index,
 	return 2300;
 
     case audioMasterGetVendorString:
-	strcpy((char *)ptr, "Fervent Software");
+	strcpy((char *)ptr, "Chris Cannam");
 	break;
 
     case audioMasterGetProductString:
@@ -129,7 +129,7 @@ WinMain(HINSTANCE hInst, HINSTANCE hPrevInst, LPSTR cmdline, int cmdshow)
     char *destFile = 0;
 
     cout << "DSSI VST plugin scanner v0.3" << endl;
-    cout << "Copyright (c) 2004-2006 Chris Cannam - Fervent Software" << endl;
+    cout << "Copyright (c) 2004-2007 Chris Cannam" << endl;
 
     if (cmdline && cmdline[0]) destFile = strdup(cmdline);
     

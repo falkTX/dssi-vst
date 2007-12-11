@@ -22,6 +22,10 @@ of dssi-vst.  This offer does not imply any exemption to the GPL for
 the liblo code itself or the remainder of dssi-vst, nor to any other
 derived work that may use liblo.
 
+*** NOTE: If you build dssi-vst using the VeSTige VST compatibility
+*** header instead of the official VST SDK, then the original GNU
+*** General Public License applies, and the above exception is not
+*** available to you.
 
 *** Please see the dssi-vst README for more information about these terms.
 *** The following is the standard GPL, as referred to in the above.

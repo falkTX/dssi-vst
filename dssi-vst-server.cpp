@@ -736,7 +736,7 @@ hostCallback(AEffect *plugin, long opcode, long index,
 	plugin->dispatcher(plugin, effEditIdle, 0, 0, 0, 0);
 	break;
 
-    case audioMasterPinConnected:
+    case DEPRECATED_VST_SYMBOL(audioMasterPinConnected):
 	if (debugLevel > 1)
 	    cerr << "dssi-vst-server[2]: audioMasterPinConnected requested" << endl;
 	break;
@@ -917,7 +917,7 @@ hostCallback(AEffect *plugin, long opcode, long index,
     case audioMasterGetVendorString:
 	if (debugLevel > 1)
 	    cerr << "dssi-vst-server[2]: audioMasterGetVendorString requested" << endl;
-	strcpy((char *)ptr, "Fervent Software");
+	strcpy((char *)ptr, "Chris Cannam");
 	break;
 
     case audioMasterGetProductString:
@@ -1133,7 +1133,7 @@ WinMain(HINSTANCE hInst, HINSTANCE hPrevInst, LPSTR cmdline, int cmdshow)
     bool tryGui = false, haveGui = true;
 
     cout << "DSSI VST plugin server v" << RemotePluginVersion << endl;
-    cout << "Copyright (c) 2004-2006 Chris Cannam - Fervent Software" << endl;
+    cout << "Copyright (c) 2004-2006 Chris Cannam" << endl;
 
     char *home = getenv("HOME");
 

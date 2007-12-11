@@ -1,7 +1,13 @@
 
 DSSIDIR		= /usr/local/lib/dssi
 BINDIR		= /usr/local/bin
-CXXFLAGS	= -I./vstsdk2.4/pluginterfaces/vst2.x -Wall
+
+# To compile with the VeSTige compatibility header:
+CXXFLAGS	= -Ivestige -Wall
+
+# To compile with the official VST SDK v2.4r2:
+#CXXFLAGS	= -I./vstsdk2.4/pluginterfaces/vst2.x -Wall
+
 LDFLAGS		= 
 
 TARGETS		= dssi-vst-server.exe.so \
@@ -39,7 +45,7 @@ distclean:	clean
 		rm -f $(TARGETS) dssi-vst-scanner dssi-vst-server *~ *.bak
 
 %.exe.so:	%.cpp libremoteplugin.a $(HEADERS)
-		wineg++ $(CXXFLAGS) $< -o $* $(LDFLAGS) -L. -lremoteplugin
+		wineg++ $(CXXFLAGS) $< -o $* $(LDFLAGS) -L. -lremoteplugin -lpthread
 
 libremoteplugin.a:	remotepluginclient.o remotepluginserver.o rdwrops.o paths.o
 		ar r $@ $^

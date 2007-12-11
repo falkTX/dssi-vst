@@ -3,14 +3,32 @@ dssi-vst: a DSSI plugin wrapper for VST plugins
 ===============================================
 
 This is a DSSI plugin wrapper for VST effects and instruments with GUI
-support.  Copyright (c) 2004-2006 Chris Cannam, Fervent Software Ltd.
+support.
 
-This is the 0.4 release of dssi-vst.
+Copyright (c) 2004-2007 Chris Cannam, cannam@all-day-breakfast.com.
 
-The main change since the 0.3.1 release is that dssi-vst now builds
-with newer versions of the Wine tools (Wine 0.9.5 or newer is
-required).  This release also builds with version 2.4 of the VST SDK,
-although it should still work with the older 2.3 as well.
+This is the 0.5 release of dssi-vst.
+
+This release is the first to officially support the VeSTige
+VST-compatibility header from Javier Serrano Polo (see
+vestige/aeffectx.h).  With this header, you no longer need to obtain
+the official VST SDK in order to build dssi-vst.  Many thanks to
+Javier for publishing this fine piece of work.
+
+ ** IMPORTANT: The author of dssi-vst has no connection with the
+ ** author of the VeSTige VST-compatibility header, has had no
+ ** involvement in its creation, and has not modified it in any way.
+ ** The VeSTige header is included in this package in the good-faith
+ ** belief that it has been cleanly and legally reverse engineered
+ ** without reference to the official VST SDK and without its
+ ** developer(s) having agreed to the VST SDK license agreement.
+ ** If you have any reason to believe that this is not the case,
+ ** please contact the author of dssi-vst.
+
+Please also read the "Licence" section further down this document.
+
+This release is also compatible with version 2.4r2 of the official VST
+SDK.  It may also compile with version 2.3.
 
 
 Build etc
@@ -20,15 +38,22 @@ To build dssi-vst, you will need:
 
 * The DSSI header.
 
-* Wine 0.9.5 or newer -- http://www.winehq.com/
+* Wine 0.9.5 or newer and its development tools -- http://www.winehq.com/
 
 * Steve Harris's liblo "Lite OSC" library -- http://liblo.sf.net/ -- 
   version 0.9 or newer.
 
-* The VST SDK headers -- http://www.steinberg.de/Steinberg/Developers8b99.html
+* OPTIONALLY the VST SDK headers.  The URL for downloading these seems
+  to change every week, but at the time of writing it is:
+
+     http://www.steinberg.de/331+M54a708de802.html
+
   These are free to download, but you need to agree to Steinberg's
   licensing terms and you may not redistribute them.  Unzip the SDK
   into the current directory (creating a subdirectory called vstsdk2.4).
+
+  If you wish to use the official VST SDK, please edit the Makefile
+  as directed in its comments.
 
 Once you have all of the above, you should be able to build and
 install by running "make" then "make install".
@@ -134,13 +159,22 @@ Bad points:
 Licence
 -------
 
-My usual preference would be to offer dssi-vst under the GNU GPL.
-However, it is my personal opinion (and I am not a lawyer and have not
-consulted one) that GPL'd code that makes use of the Steinberg VST SDK
-header files, either directly or via a library, cannot be redistributed
-without violating either the GPL or at least one of the copyright or
-licensing terms for the Steinberg header files.  So I am offering this
-code under the following terms:
+dssi-vst is offered under two alternative licensing schemes: the GNU
+General Public License (GPL), or the GPL with a special exception for
+the VST SDK headers.
+
+* GPL.  If you choose to compile with the VeSTige VST compatibility
+header, then you may distribute and/or modify dssi-vst under the
+terms of the GNU General Public License as published by the Free
+Software Foundation; either version 2 of the License, or (at your
+option) any later version.  Note that in order to accept this
+license, you must not have included any part of the official VST
+SDK in your dssi-vst build.  Provided that this is the case, please
+ignore the remainder of this Licence section.
+
+* GPL-with-exception.  If you compile dssi-vst with the official VST
+SDK headers, you may distribute the results under the following
+licence terms:
 
 "You may distribute and/or modify dssi-vst under the terms of version 2
 of the GNU General Public License as published by the Free Software
@@ -152,17 +186,13 @@ to apply to all of the remaining source code for dssi-vst.
 
 Chris Cannam, cannam@all-day-breakfast.com"
 
-What does this mean in practice?  The main thing is it means dssi-vst
-is not Free Software in the terms of e.g. the Debian Free Software
-Guidelines.  You can redistribute a compiled dssi-vst plugin legally
-so long as you follow the GPL's terms with respect to the source code
-for dssi-vst and liblo (see below), but you cannot redistribute the
-whole of the source code required to build dssi-vst.  Since dssi-vst
-exists solely to provide compatibility with proprietary code in the
-form of VST plugins, I don't see this as a great moral hardship.  If
-it troubles you, don't use proprietary plugins.
-
-You _can_ use dssi-vst as a plugin with a GPL'd DSSI host.
+Note that these two licensing schemes are exclusive.  If you accept
+the GPL-with-exception option, you may not distribute the VeSTige
+header code with or in dssi-vst.  If you accept the GPL option, you
+may not distribute binaries of dssi-vst built with the official VST
+SDK.  The default for dssi-vst is to build using the VeSTige headers,
+and therefore the result is covered by the GPL without any additional
+exception.
 
 
 Licence for liblo
