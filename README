@@ -7,9 +7,11 @@ support.
 
 Copyright (c) 2004-2007 Chris Cannam, cannam@all-day-breakfast.com.
 
-This is the 0.5 release of dssi-vst.
+This is the 0.6 release of dssi-vst.  This release contains a fix for a
+crash in the vsthost program.  Otherwise (and particularly in regard to
+use of the dssi-vst DSSI plugin itself) it is identical to 0.5.
 
-This release is the first to officially support the VeSTige
+The 0.5 release was the first to officially support the VeSTige
 VST-compatibility header from Javier Serrano Polo (see
 vestige/aeffectx.h).  With this header, you no longer need to obtain
 the official VST SDK in order to build dssi-vst.  Many thanks to
