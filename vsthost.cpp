@@ -511,7 +511,6 @@ main(int argc, char **argv)
     sigaction(SIGQUIT, &sa, 0);
     sigaction(SIGTERM, &sa, 0);
     sigaction(SIGPIPE, &sa, 0);
-    sigaction(SIGCHLD, &sa, 0);
 
     jackData.client = 0;
 
@@ -534,6 +533,7 @@ main(int argc, char **argv)
     sigaddset(&_signals, SIGTERM);
     sigaddset(&_signals, SIGUSR1);
     sigaddset(&_signals, SIGUSR2);
+    sigaddset(&_signals, SIGCHLD);
     pthread_sigmask(SIG_BLOCK, &_signals, 0);
 
     bool hasMIDI = plugin->hasMIDIInput();

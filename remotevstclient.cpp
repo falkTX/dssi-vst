@@ -75,7 +75,7 @@ RemoteVSTClient::RemoteVSTClient(std::string dllName, bool showGUI) :
 	    cleanup();
 	    throw((std::string)"Fork failed");
 	} else if (child == 0) { // child process
-	    if (execlp(fileName.c_str(), fileName.c_str(), argStr, 0)) {
+	    if (execlp(fileName.c_str(), fileName.c_str(), argStr, NULL)) {
 		perror("Exec failed");
 		exit(1);
 	    }
@@ -336,7 +336,7 @@ RemoteVSTClient::queryPlugins(std::vector<PluginRecord> &plugins)
 	    unlink(fifoFile);
 	    throw((std::string)"Fork failed");
 	} else if (child == 0) { // child process
-	    if (execlp(fileName.c_str(), fileName.c_str(), fifoFile, 0)) {
+	    if (execlp(fileName.c_str(), fileName.c_str(), fifoFile, NULL)) {
 		perror("Exec failed");
 		unlink(fifoFile);
 		exit(1);
