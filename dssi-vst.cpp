@@ -685,10 +685,37 @@ DSSIVSTPlugin::configure(LADSPA_Handle instance, const char *key,
 
 
 static DSSIVSTPlugin *_plugin = 0;
+static std::vector<int> _ladspaDescriptors;
+
+static void
+_makeLADSPADescriptorMap()
+{
+    int i = 0;
+    const DSSI_Descriptor *dssiDescriptor = 0;
+    while ((dssiDescriptor = dssi_descriptor(i))) {
+	if (!dssiDescriptor->run_synth &&
+	    !dssiDescriptor->run_synth_adding &&
+	    !dssiDescriptor->run_multiple_synths &&
+	    !dssiDescriptor->run_multiple_synths_adding) {
+	    _ladspaDescriptors.push_back(i);
+	}
+	++i;
+    }
+}
 
 const LADSPA_Descriptor *
 ladspa_descriptor(unsigned long index)
 {
+    if (!_plugin) {
+	_plugin = new DSSIVSTPlugin;
+	_makeLADSPADescriptorMap();
+    }
+    if (index < _ladspaDescriptors.size()) {
+	const DSSI_Descriptor *dssiDescriptor =
+	    dssi_descriptor(_ladspaDescriptors[index]);
+	if (!dssiDescriptor) return 0;
+	return dssiDescriptor->LADSPA_Plugin;
+    }
     return 0;
 }
 
@@ -697,6 +724,7 @@ dssi_descriptor(unsigned long index)
 {
     if (!_plugin) {
 	_plugin = new DSSIVSTPlugin;
+	_makeLADSPADescriptorMap();
     }
     return _plugin->queryDescriptor(index);
 }
