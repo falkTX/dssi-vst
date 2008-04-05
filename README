@@ -1,0 +1,214 @@
+
+dssi-vst: a DSSI plugin wrapper for VST plugins
+===============================================
+
+This is a DSSI plugin wrapper for VST effects and instruments with GUI
+support.
+
+Copyright (c) 2004-2007 Chris Cannam, cannam@all-day-breakfast.com.
+
+This is the 0.5 release of dssi-vst.
+
+This release is the first to officially support the VeSTige
+VST-compatibility header from Javier Serrano Polo (see
+vestige/aeffectx.h).  With this header, you no longer need to obtain
+the official VST SDK in order to build dssi-vst.  Many thanks to
+Javier for publishing this fine piece of work.
+
+ ** IMPORTANT: The author of dssi-vst has no connection with the
+ ** author of the VeSTige VST-compatibility header, has had no
+ ** involvement in its creation, and has not modified it in any way.
+ ** The VeSTige header is included in this package in the good-faith
+ ** belief that it has been cleanly and legally reverse engineered
+ ** without reference to the official VST SDK and without its
+ ** developer(s) having agreed to the VST SDK license agreement.
+ ** If you have any reason to believe that this is not the case,
+ ** please contact the author of dssi-vst.
+
+Please also read the "Licence" section further down this document.
+
+This release is also compatible with version 2.4r2 of the official VST
+SDK.  It may also compile with version 2.3.
+
+
+Build etc
+---------
+
+To build dssi-vst, you will need:
+
+* The DSSI header.
+
+* Wine 0.9.5 or newer and its development tools -- http://www.winehq.com/
+
+* Steve Harris's liblo "Lite OSC" library -- http://liblo.sf.net/ -- 
+  version 0.9 or newer.
+
+* OPTIONALLY the VST SDK headers.  The URL for downloading these seems
+  to change every week, but at the time of writing it is:
+
+     http://www.steinberg.de/331+M54a708de802.html
+
+  These are free to download, but you need to agree to Steinberg's
+  licensing terms and you may not redistribute them.  Unzip the SDK
+  into the current directory (creating a subdirectory called vstsdk2.4).
+
+  If you wish to use the official VST SDK, please edit the Makefile
+  as directed in its comments.
+
+Once you have all of the above, you should be able to build and
+install by running "make" then "make install".
+
+To use dssi-vst: make sure DSSI_PATH is set appropriately, set
+VST_PATH to a colon-separated list of the directories containing VST
+plugins, and start up your DSSI host.
+
+The plugin soname is dssi-vst.so, and each VST plugin gets a label
+corresponding to its DLL name.  So for example, with
+jack-dssi-host, you should be able to just run
+
+   jack-dssi-host dssi-vst.so:MyVstPlugin.dll
+
+Source files:
+
+* dssi-vst.cpp: DSSI plugin implementation
+* dssi-vst_gui.cpp: DSSI plugin GUI process implementation
+* dssi-vst-scanner.cpp: Program that determines what VSTs you have and
+  communicates that to the plugin
+* dssi-vst-server.cpp: Program that hosts a single VST with a comms link
+  to the plugin
+* rdwrops.cpp, paths.cpp: misc functions
+* remotepluginclient.cpp/remotepluginserver.cpp: Code to handle process
+  separation for audio plugin (not VST specific), used by DSSI plugin & server
+* vsthost.cpp: JACK/aseq host for VSTs using dssi-vst-server, but not using
+  the actual DSSI plugin. 
+
+
+Bugs and limitations
+--------------------
+
+Does not handle multiple VST plugins in a single DLL.
+
+Does not handle multi-channel support correctly yet.  DSSI does not
+use MIDI channels, so dssi-vst should permit separate instances
+delivering to separate VST MIDI channels using run_multiple_synths to
+share the VST plugin.
+
+Does not communicate tempo and beat information to the VST plugin (the
+VST API has a mechanism for this, but DSSI does not... yet).
+
+Has a tendency to leave FIFOs and shared-memory files lying around in
+the temporary directory (/tmp or /var/tmp).  You may want to go and
+remove anything starting with "rplugin_" occasionally...
+
+
+Why not use vstserver or libfst?
+--------------------------------
+
+dssi-vst doesn't use libfst because libfst is just too serious a thing
+to start messing about with in a plugin whose host doesn't know about
+it (because it involves introducing Wine threads into the host).
+
+The main reason dssi-vst doesn't use vstserver is that I wrote most of
+this code quite a while ago as an exercise, and I've just got used to
+my own code.  Architecturally dssi-vst is like vstserver in that it
+runs the VST plugin in a separate process and communicates with it via
+some IPC mechanism (here shared memory and POSIX FIFOs, in vstserver
+shared memory and Unix domain sockets).
+
+Good points of dssi-vst:
+
+* Bugs in dssi-vst aside, it ought to be impossible for a misbehaving
+  VST plugin to crash its host.  It's therefore theoretically possible
+  for dssi-vst to be more stable for audio use than an fst host.
+  (The same is true of vstserver.)
+
+* DSSI provides a closer match to the VST feature set than LADSPA
+  does -- apart from the synth stuff, this plugin handles VST programs
+  as well as parameters -- which makes it more useful than vstserver's
+  existing ladspavst plugin.
+
+* Obviously, dssi-vst allows any DSSI host to become a VST host
+  without having to know anything about VST or to have a code (or
+  licence) dependency on the VST SDK, which is not the case with fst.
+
+Bad points:
+
+* Processes everywhere.  Besides your host process, you get a
+  server process to do the actual audio processing, a scanner
+  process to identify the available VST plugins, and a GUI process.
+  All of these except the GUI process (which in fact does nothing
+  except send information around between the other processes) are
+  winelib applications that are run under Wine.  dssi-vst is useful
+  for running the odd synth or effect on a fast machine, not for
+  doing all your effects work.
+
+* It's hard to make sure things like the communications FIFOs are
+  tidied up when exiting.  Apart from anything else it requires
+  that the host call cleanup() on its plugins when exiting from
+  ctrl-C or whatever.  A model with a server shared among many
+  plugins would cope better with this by having the server take
+  ownership of such resources instead of the DSSI plugin.
+
+* The comms model dssi-vst uses introduces a fixed latency equal to
+  the JACK period size, as well as any existing latency in the VST
+  plugin.  (The fixed latency is exposed through the _latency output
+  control port.  Does anyone know how to find out the latency of a
+  VST plugin?)
+
+
+Licence
+-------
+
+dssi-vst is offered under two alternative licensing schemes: the GNU
+General Public License (GPL), or the GPL with a special exception for
+the VST SDK headers.
+
+* GPL.  If you choose to compile with the VeSTige VST compatibility
+header, then you may distribute and/or modify dssi-vst under the
+terms of the GNU General Public License as published by the Free
+Software Foundation; either version 2 of the License, or (at your
+option) any later version.  Note that in order to accept this
+license, you must not have included any part of the official VST
+SDK in your dssi-vst build.  Provided that this is the case, please
+ignore the remainder of this Licence section.
+
+* GPL-with-exception.  If you compile dssi-vst with the official VST
+SDK headers, you may distribute the results under the following
+licence terms:
+
+"You may distribute and/or modify dssi-vst under the terms of version 2
+of the GNU General Public License as published by the Free Software
+Foundation, except that you are hereby permitted to omit the source
+code to the two VST SDK header files AEffect.h and aeffectx.h (the
+source code of which would otherwise be required by section 3 of the
+GPL) when redistributing dssi-vst.  The full terms of the GPL continue
+to apply to all of the remaining source code for dssi-vst.
+
+Chris Cannam, cannam@all-day-breakfast.com"
+
+Note that these two licensing schemes are exclusive.  If you accept
+the GPL-with-exception option, you may not distribute the VeSTige
+header code with or in dssi-vst.  If you accept the GPL option, you
+may not distribute binaries of dssi-vst built with the official VST
+SDK.  The default for dssi-vst is to build using the VeSTige headers,
+and therefore the result is covered by the GPL without any additional
+exception.
+
+
+Licence for liblo
+-----------------
+
+dssi-vst makes use of the liblo library by Steve Harris, which is
+provided under the GPL.  Steve Harris has provided the following
+exemption to permit the liblo library to be used with dssi-vst:
+
+"You are hereby permitted to omit the source code to the two VST SDK
+header files AEffect.h and aeffectx.h (the source code of which would
+otherwise be required by section 3 of the GPL) when redistributing any
+version of dssi-vst which uses liblo.  This offer does not imply any
+exemption to the GPL for the liblo code itself or the remainder of
+dssi-vst, nor to any other derived work that may use liblo.
+
+Steve Harris
+steve <at> plugin <dot> org <dot> uk"
+
