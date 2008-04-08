@@ -1,5 +1,6 @@
 
 DSSIDIR		= /usr/local/lib/dssi
+LADSPADIR	= /usr/local/lib/ladspa
 BINDIR		= /usr/local/bin
 
 # To compile with the VeSTige compatibility header:
@@ -33,8 +34,10 @@ all:		$(TARGETS)
 
 install:	all
 		mkdir -p $(DSSIDIR)/dssi-vst
+		mkdir -p $(LADSPADIR)
 		mkdir -p $(BINDIR)
 		install dssi-vst.so $(DSSIDIR)
+		install dssi-vst.so $(LADSPADIR)
 		install dssi-vst-server.exe.so dssi-vst-server dssi-vst-scanner.exe.so dssi-vst-scanner dssi-vst_gui $(DSSIDIR)/dssi-vst
 		install vsthost $(BINDIR)
 
