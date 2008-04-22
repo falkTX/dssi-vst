@@ -355,9 +355,9 @@ openJack(const char *pluginName)
 	}
     }
     tmpbuf[j] = '\0';
-    snprintf(jackName, 26, "vst_%s_%u", tmpbuf, getpid());
+    snprintf(jackName, 26, "vst_%s", tmpbuf);
 
-    if ((jackData.client = jack_client_new(jackName)) == 0) {
+    if ((jackData.client = jack_client_open(jackName, JackNullOption, NULL)) == 0) {
 	fprintf(stderr, "ERROR: Failed to connect to JACK server -- jackd not running?\n");
 	return 1;
     }
