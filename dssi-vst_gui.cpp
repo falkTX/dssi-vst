@@ -19,6 +19,7 @@
 #include <sys/time.h>
 #include <unistd.h>
 #include <time.h>
+#include <stdlib.h>
 
 #include <lo/lo.h>
 #include <lo/lo_lowlevel.h>

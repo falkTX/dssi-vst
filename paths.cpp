@@ -8,6 +8,7 @@
 #include "paths.h"
 
 #include <iostream>
+#include <stdlib.h>
 
 std::vector<std::string>
 Paths::getPath(std::string envVar, std::string deflt, std::string defltHomeRelPath)

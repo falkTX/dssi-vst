@@ -4,10 +4,10 @@ LADSPADIR	= /usr/local/lib/ladspa
 BINDIR		= /usr/local/bin
 
 # To compile with the VeSTige compatibility header:
-CXXFLAGS	= -Ivestige -Wall
+CXXFLAGS	= -Ivestige -Wall -fPIC
 
 # To compile with the official VST SDK v2.4r2:
-#CXXFLAGS	= -I./vstsdk2.4/pluginterfaces/vst2.x -Wall
+#CXXFLAGS	= -I./vstsdk2.4/pluginterfaces/vst2.x -Wall -fPIC
 
 LDFLAGS		= 
 

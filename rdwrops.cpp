@@ -64,7 +64,7 @@ rdwr_tryWrite(int fd, const void *buf, size_t count, const char *file, int line)
 
     if (w < (ssize_t)count) {
 	fprintf(stderr, "Failed to complete write on fd %d (have %d, put %d) at %s:%d\n",
-		fd, count, w, file, line);
+		fd, (int)count, (int)w, file, line);
 	throw RemotePluginClosedException();
     }
 

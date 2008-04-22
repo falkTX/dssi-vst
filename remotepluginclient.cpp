@@ -16,6 +16,8 @@
 #include <unistd.h>
 #include <iostream>
 #include <errno.h>
+#include <stdlib.h>
+#include <string.h>
 
 #include "rdwrops.h"
 

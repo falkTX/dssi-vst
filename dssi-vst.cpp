@@ -18,6 +18,8 @@
 #include <vector>
 #include <string>
 #include <iostream>
+#include <string.h>
+#include <stdlib.h>
 
 // Should be divisible by three
 #define MIDI_BUFFER_SIZE 1023
