@@ -81,6 +81,8 @@ RemoteVSTClient::RemoteVSTClient(std::string dllName, bool showGUI) :
 		exit(1);
 	    }
 	}
+
+	break;
     }
 
     if (!found) {
@@ -343,6 +345,8 @@ RemoteVSTClient::queryPlugins(std::vector<PluginRecord> &plugins)
 		exit(1);
 	    }
 	}
+
+	break;
     }
 
     if (!found) {

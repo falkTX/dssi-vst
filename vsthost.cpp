@@ -508,6 +508,7 @@ main(int argc, char **argv)
     sigemptyset(&sa.sa_mask);
     sa.sa_flags = 0;
     sigaction(SIGHUP,  &sa, 0);
+    sigaction(SIGINT,  &sa, 0);
     sigaction(SIGQUIT, &sa, 0);
     sigaction(SIGTERM, &sa, 0);
     sigaction(SIGPIPE, &sa, 0);
