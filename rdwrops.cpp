@@ -4,7 +4,7 @@
 
 /*
   dssi-vst: a DSSI plugin wrapper for VST effects and instruments
-  Copyright 2004-2006 Chris Cannam
+  Copyright 2004-2008 Chris Cannam
 */
 
 #include "rdwrops.h"

@@ -2,7 +2,7 @@
 
 /*
   dssi-vst: a DSSI plugin wrapper for VST effects and instruments
-  Copyright 2004-2006 Chris Cannam
+  Copyright 2004-2008 Chris Cannam
 */
 
 #include <iostream>
@@ -1095,7 +1095,7 @@ AudioThreadMain(LPVOID parameter)
 	    cerr << "ERROR: Remote VST server instance failed: " << message << endl;
 	    exiting = true;
 	} catch (RemotePluginClosedException) {
-	    cerr << "ERROR: Remote VST plugin communication failure" << endl;
+	    cerr << "ERROR: Remote VST plugin communication failure in audio thread" << endl;
 	    exiting = true;
 	}
     }
@@ -1133,7 +1133,7 @@ WinMain(HINSTANCE hInst, HINSTANCE hPrevInst, LPSTR cmdline, int cmdshow)
     bool tryGui = false, haveGui = true;
 
     cout << "DSSI VST plugin server v" << RemotePluginVersion << endl;
-    cout << "Copyright (c) 2004-2006 Chris Cannam" << endl;
+    cout << "Copyright (c) 2004-2008 Chris Cannam" << endl;
 
     char *home = getenv("HOME");
 
@@ -1306,7 +1306,7 @@ WinMain(HINSTANCE hInst, HINSTANCE hPrevInst, LPSTR cmdline, int cmdshow)
 	cerr << "ERROR: Remote VST startup failed: " << message << endl;
 	return 1;
     } catch (RemotePluginClosedException) {
-	cerr << "ERROR: Remote VST plugin communication failure" << endl;
+	cerr << "ERROR: Remote VST plugin communication failure in startup" << endl;
 	return 1;
     }
 
@@ -1409,6 +1409,7 @@ WinMain(HINSTANCE hInst, HINSTANCE hPrevInst, LPSTR cmdline, int cmdshow)
 
 	if (tryGui && haveGui && !guiVisible) {
 	    // Running in GUI-always-on mode and GUI has exited: follow it
+	    cerr << "dssi-vst-server: Running in GUI mode and GUI has exited: going with it" << endl;
 	    exiting = true;
 	}
 
@@ -1421,7 +1422,7 @@ WinMain(HINSTANCE hInst, HINSTANCE hPrevInst, LPSTR cmdline, int cmdshow)
 		remoteVSTServerInstance->dispatchControl(500);
 	    }
 	} catch (RemotePluginClosedException) {
-	    cerr << "ERROR: Remote VST plugin communication failure" << endl;
+	    cerr << "ERROR: Remote VST plugin communication failure in GUI thread" << endl;
 	    exiting = true;
 	    break;
 	}

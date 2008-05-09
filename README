@@ -5,11 +5,31 @@ dssi-vst: a DSSI plugin wrapper for VST plugins
 This is a DSSI plugin wrapper for VST effects and instruments with GUI
 support.
 
-Copyright (c) 2004-2007 Chris Cannam, cannam@all-day-breakfast.com.
+Copyright (c) 2004-2008 Chris Cannam, cannam@all-day-breakfast.com.
 
-This is the 0.5 release of dssi-vst.
+This is the 0.7 release of dssi-vst.
 
-This release is the first to officially support the VeSTige
+Changes since version 0.6:
+
+ * dssi-vst now exposes a LADSPA descriptor as well as a DSSI
+   descriptor, and the install target now installs dssi-vst to the
+   system LADSPA directory as well as the DSSI one.  This change
+   permits you to use dssi-vst to load VST effects in LADSPA hosts,
+   as well as to load VST effects and instruments in DSSI hosts as
+   before.  When used in a LADSPA host, the VST GUI will not be
+   shown unless the host supports DSSI-style GUIs for LADSPA
+   plugins as well -- which most do not.
+
+ * The vsthost program uses jack_client_open instead of
+   jack_client_new, for more predictable client names.
+
+ * dssi-vst now compiles with gcc 4.3 and is slightly less likely
+   than previously to crash on startup.
+
+The 0.6 release contained a fix for a crash in the vsthost program.
+Otherwise it was identical to 0.5.
+
+The 0.5 release was the first to officially support the VeSTige
 VST-compatibility header from Javier Serrano Polo (see
 vestige/aeffectx.h).  With this header, you no longer need to obtain
 the official VST SDK in order to build dssi-vst.  Many thanks to
