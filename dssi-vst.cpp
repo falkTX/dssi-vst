@@ -198,6 +198,17 @@ DSSIVSTPluginInstance::DSSIVSTPluginInstance(std::string dllName,
 	delete m_controlPortsSaved; m_controlPortsSaved = 0;
 	delete m_audioIns; m_audioIns = 0;
 	delete m_audioOuts; m_audioOuts = 0;
+
+    } catch (std::string message) {
+	std::cerr << "DSSIVSTPluginInstance::DSSIVSTPluginInstance("
+		  << dllName << "): startup failed: " << message << std::endl;
+	
+	m_ok = false;
+	delete m_plugin; m_plugin = 0;
+	delete m_controlPorts; m_controlPorts = 0;
+	delete m_controlPortsSaved; m_controlPortsSaved = 0;
+	delete m_audioIns; m_audioIns = 0;
+	delete m_audioOuts; m_audioOuts = 0;
     }
 
     std::cerr << "DSSIVSTPluginInstance::DSSIVSTPluginInstance(" << dllName << ") construction complete" << std::endl;
