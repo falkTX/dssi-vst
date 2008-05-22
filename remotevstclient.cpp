@@ -2,7 +2,7 @@
 
 /*
   dssi-vst: a DSSI plugin wrapper for VST effects and instruments
-  Copyright 2004-2007 Chris Cannam
+  Copyright 2004-2008 Chris Cannam
 */
 
 #include "remotevstclient.h"
@@ -17,6 +17,7 @@
 #include <sys/types.h>
 #include <sys/wait.h>
 #include <errno.h>
+#include <stdlib.h>
 
 #include "rdwrops.h"
 #include "paths.h"
@@ -80,6 +81,8 @@ RemoteVSTClient::RemoteVSTClient(std::string dllName, bool showGUI) :
 		exit(1);
 	    }
 	}
+
+	break;
     }
 
     if (!found) {
@@ -342,6 +345,8 @@ RemoteVSTClient::queryPlugins(std::vector<PluginRecord> &plugins)
 		exit(1);
 	    }
 	}
+
+	break;
     }
 
     if (!found) {

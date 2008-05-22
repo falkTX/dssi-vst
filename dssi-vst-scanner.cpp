@@ -2,7 +2,7 @@
 
 /*
   dssi-vst: a DSSI plugin wrapper for VST effects and instruments
-  Copyright 2004-2007 Chris Cannam
+  Copyright 2004-2008 Chris Cannam
 */
 
 #include <iostream>
@@ -129,7 +129,7 @@ WinMain(HINSTANCE hInst, HINSTANCE hPrevInst, LPSTR cmdline, int cmdshow)
     char *destFile = 0;
 
     cout << "DSSI VST plugin scanner v0.3" << endl;
-    cout << "Copyright (c) 2004-2007 Chris Cannam" << endl;
+    cout << "Copyright (c) 2004-2008 Chris Cannam" << endl;
 
     if (cmdline && cmdline[0]) destFile = strdup(cmdline);
     

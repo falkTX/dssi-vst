@@ -2,7 +2,7 @@
 
 /*
   dssi-vst: a DSSI plugin wrapper for VST effects and instruments
-  Copyright 2004-2007 Chris Cannam
+  Copyright 2004-2008 Chris Cannam
 */
 
 #ifndef _RD_WR_OPS_H_

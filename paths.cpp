@@ -2,12 +2,13 @@
 
 /*
   dssi-vst: a DSSI plugin wrapper for VST effects and instruments
-  Copyright 2004-2007 Chris Cannam
+  Copyright 2004-2008 Chris Cannam
 */
 
 #include "paths.h"
 
 #include <iostream>
+#include <stdlib.h>
 
 std::vector<std::string>
 Paths::getPath(std::string envVar, std::string deflt, std::string defltHomeRelPath)

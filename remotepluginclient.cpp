@@ -2,7 +2,7 @@
 
 /*
   dssi-vst: a DSSI plugin wrapper for VST effects and instruments
-  Copyright 2004-2007 Chris Cannam
+  Copyright 2004-2008 Chris Cannam
 */
 
 #include "remotepluginclient.h"
@@ -16,6 +16,8 @@
 #include <unistd.h>
 #include <iostream>
 #include <errno.h>
+#include <stdlib.h>
+#include <string.h>
 
 #include "rdwrops.h"
 
