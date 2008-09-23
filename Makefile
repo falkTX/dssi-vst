@@ -30,6 +30,11 @@ OBJECTS		= remotevstclient.o \
 		  rdwrops.o \
 		  paths.o
 
+OBJECTS_W32	= remotepluginclient.w32.o \
+		  remotepluginserver.w32.o \
+		  rdwrops.w32.o \
+		  paths.w32.o
+
 all:		$(TARGETS)
 
 install:	all
@@ -42,25 +47,25 @@ install:	all
 		install vsthost $(BINDIR)
 
 clean:
-		rm -f $(OBJECTS) libremoteplugin.a
+		rm -f $(OBJECTS) $(OBJECTS_W32) libremoteplugin.a libremoteplugin.w32.a
 
 distclean:	clean
 		rm -f $(TARGETS) dssi-vst-scanner dssi-vst-server *~ *.bak
 
-%.exe.so:	%.cpp libremoteplugin.a $(HEADERS)
-		wineg++ $(CXXFLAGS) $< -o $* $(LDFLAGS) -L. -lremoteplugin -lpthread
+%.exe.so:	%.cpp libremoteplugin.w32.a $(HEADERS)
+		wineg++ -m32 $(CXXFLAGS) $< -o $* $(LDFLAGS) -L. -lremoteplugin.w32 -lpthread
 
 libremoteplugin.a:	remotepluginclient.o remotepluginserver.o rdwrops.o paths.o
 		ar r $@ $^
 
-remotepluginclient.o:	remotepluginclient.cpp	$(HEADERS)
-		g++ $(CXXFLAGS) remotepluginclient.cpp -c
+libremoteplugin.w32.a:	remotepluginclient.w32.o remotepluginserver.w32.o rdwrops.w32.o paths.w32.o
+		ar r $@ $^
 
-remotevstclient.o:	remotevstclient.cpp $(HEADERS)
-		g++ $(CXXFLAGS) remotevstclient.cpp -c
+%.w32.o:	%.cpp $(HEADERS)
+		wineg++ -m32 $(CXXFLAGS) $< -c -o $@
 
-remotepluginserver.o:	remotepluginserver.cpp $(HEADERS)
-		g++ $(CXXFLAGS) remotepluginserver.cpp -c
+%.o:		%.cpp $(HEADERS)
+		g++ $(CXXFLAGS) $< -c
 
 dssi-vst.so:	dssi-vst.cpp libremoteplugin.a remotevstclient.o $(HEADERS)
 		g++ -shared -Wl,-Bsymbolic -g3 $(CXXFLAGS) -o dssi-vst.so dssi-vst.cpp remotevstclient.o $(LDFLAGS) -L. -lremoteplugin -lasound
