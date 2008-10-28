@@ -11,6 +11,8 @@
 #include <string>
 #include <map>
 
+#include <stdlib.h>
+
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <fcntl.h>
@@ -979,6 +981,8 @@ hostCallback(AEffect *plugin, long opcode, long index,
     case audioMasterUpdateDisplay:
 	if (debugLevel > 1)
 	    cerr << "dssi-vst-server[2]: audioMasterUpdateDisplay requested" << endl;
+	plugin->dispatcher(plugin, effEditIdle,
+			   0, 0, NULL, 0);
 	break;
 
     case audioMasterBeginEdit:
