@@ -16,6 +16,7 @@
 #include <sys/un.h>
 #include <dirent.h>
 #include <unistd.h>
+#include <cstdlib>
 
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
@@ -249,7 +250,6 @@ WinMain(HINSTANCE hInst, HINSTANCE hPrevInst, LPSTR cmdline, int cmdshow)
 
 		int inputs = 0, outputs = 0, params = 0, programs = 0;
 		char buffer[65];
-		unsigned long uniqueId = 0;
 		bool synth = false, gui = false;
 		int i = 0;
 		AEffect *(__stdcall* getInstance)(audioMasterCallback) = 0;
