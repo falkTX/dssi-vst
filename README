@@ -7,24 +7,19 @@ support.
 
 Copyright (c) 2004-2008 Chris Cannam, cannam@all-day-breakfast.com.
 
-This is the 0.7 release of dssi-vst.
+This is the 0.8 release of dssi-vst.
 
-Changes since version 0.6:
+Changes since version 0.7:
 
- * dssi-vst now exposes a LADSPA descriptor as well as a DSSI
-   descriptor, and the install target now installs dssi-vst to the
-   system LADSPA directory as well as the DSSI one.  This change
-   permits you to use dssi-vst to load VST effects in LADSPA hosts,
-   as well as to load VST effects and instruments in DSSI hosts as
-   before.  When used in a LADSPA host, the VST GUI will not be
-   shown unless the host supports DSSI-style GUIs for LADSPA
-   plugins as well -- which most do not.
+ * The Makefile is now set up for 64-bit Linux systems (with
+   compatibility libraries for 32-bit code) as well as 32-bit ones.
+   See "Building on 64-bit systems" below.
 
- * The vsthost program uses jack_client_open instead of
-   jack_client_new, for more predictable client names.
+ * A couple of other minor fixes are also included.
 
- * dssi-vst now compiles with gcc 4.3 and is slightly less likely
-   than previously to crash on startup.
+The 0.7 release added a LADSPA descriptor as well as DSSI, contained
+several build fixes, and switched to jack_client_open in vsthost for
+more predictable client names.
 
 The 0.6 release contained a fix for a crash in the vsthost program.
 Otherwise it was identical to 0.5.
@@ -101,6 +96,17 @@ Source files:
   separation for audio plugin (not VST specific), used by DSSI plugin & server
 * vsthost.cpp: JACK/aseq host for VSTs using dssi-vst-server, but not using
   the actual DSSI plugin. 
+
+
+Building on 64-bit systems
+--------------------------
+
+You can use dssi-vst to load 32-bit Windows VST plugins in a 64-bit Linux
+environment.  The standard dssi-vst Makefile should work in a properly
+configured 64-bit system as well as a 32-bit one, but you will need to
+ensure you have the proper compatibility libraries installed.  For example,
+if using 64-bit Ubuntu or Debian, you should install (in addition to
+wine-dev) the gcc-multilib and g++-multilib packages.
 
 
 Bugs and limitations
