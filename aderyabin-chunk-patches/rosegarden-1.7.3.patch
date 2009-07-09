@@ -1,0 +1,1281 @@
+diff -ruN distr/rosegarden-1.7.3/src/base/AudioPluginInstance.cpp rosegarden-1.7.3/src/base/AudioPluginInstance.cpp
+--- distr/rosegarden-1.7.3/src/base/AudioPluginInstance.cpp	2009-02-04 07:57:37.000000000 +0400
++++ rosegarden-1.7.3/src/base/AudioPluginInstance.cpp	2009-03-03 20:47:34.579119296 +0400
+@@ -14,6 +14,12 @@
+ 
+ #include "AudioPluginInstance.h"
+ #include "Instrument.h"
++#include "gui/application/RosegardenApplication.h"
++extern "C"
++{
++    #include "libb64/b64/cencode.h"
++    #include "libb64/b64/cdecode.h"
++}
+ 
+ #include <iostream>
+ #include <cstring>
+@@ -54,7 +60,8 @@
+     m_position(position),
+     m_assigned(false),
+     m_bypass(false),
+-    m_program("")
++    m_program(""),
++    m_customData()
+ {
+ }
+ 
+@@ -63,7 +70,8 @@
+                 m_mappedId(-1),
+                 m_identifier(identifier),
+                 m_position(position),
+-                m_assigned(true)
++                m_assigned(true),
++                m_customData()
+ {
+ }
+ 
+@@ -121,6 +129,44 @@
+ 	       << encode(i->first) << "\" value=\""
+ 	       << encode(i->second) << "\"/>" << std::endl;
+     }
++    
++    //Andrew Deryabin: support for custom data
++    if (m_position == Instrument::SYNTH_PLUGIN_POSITION)
++    {    
++        std::cerr << "AudioPluginInstance::toXmlString: getting custom data from plugin " << m_identifier << std::endl;
++        QByteArray id;
++        QByteArray replyData;
++        QCString replyType;
++        QDataStream arg(id, IO_WriteOnly);
++        
++        arg << m_mappedId;
++        if(!rgapp->sequencerCall("getCustomData(int)", replyType, replyData, id))
++        {
++            std::cerr << "Error calling sequencer!" << std::cerr;
++        }
++        else
++        {
++            QDataStream streamIn(replyData, IO_ReadOnly);
++            QByteArray customData;
++            streamIn >> customData;
++            char *data_in = (char *)customData.data();
++            char *data_out = new char [customData.size() * 2];
++            memset(data_out, 0, customData.size() * 2);
++            base64_encodestate b64state;
++            base64_init_encodestate(&b64state);
++            uint codelength = base64_encode_block(data_in, customData.size(), data_out, &b64state);
++            std::string data_out_s = data_out;
++            plugin << "                     <customData value=\"" << encode(data_out_s);
++            memset(data_out, 0, customData.size() * 2);
++            codelength = base64_encode_blockend(data_out, &b64state);
++            data_out_s = data_out;
++            plugin << encode(data_out_s) << "\"/>" << std::endl;
++            delete data_out;
++        }
++        
++        
++    }
++    //Andrew Deryabin: support for custom data: end code
+ 
+     if (m_position == Instrument::SYNTH_PLUGIN_POSITION) {
+ 	plugin << "            </synth>";
+@@ -244,6 +290,49 @@
+ 
+     return base;
+ }
++
++//Andrew Deryabin: customData support
++
++bool AudioPluginInstance::setCustomData(std::string &data)
++{    
++    const char *customStr = data.c_str();
++    char *data_out = new char [data.length() * 2];
++    if(!data_out)
++        return false;
++    memset(data_out, 0, data.length());
++    base64_decodestate b64state;
++    base64_init_decodestate(&b64state);
++    uint codelength = base64_decode_block(customStr, data.length(), data_out, &b64state);
++    m_customData.clear();
++    for(unsigned long i = 0; i < codelength; i++)
++    {
++        m_customData.push_back(data_out [i]);
++    }
++    delete [] data_out;
++    return true;
++}
++
++void AudioPluginInstance::sendCustomData()
++{
++    if(m_customData.size() == 0)
++        return;
++    QByteArray data;
++    QByteArray replyData;
++    QCString replyType;
++    QDataStream arg(data, IO_WriteOnly);
++    QByteArray customDataArray;
++    customDataArray.resize(m_customData.size());
++    for(unsigned long i = 0; i < m_customData.size(); i++)
++    {
++        customDataArray [i] = m_customData.at (i);
++    }
++    arg << customDataArray;
++    arg << m_mappedId;
++    rgapp->sequencerCall("setCustomData(QByteArray,int)", replyType, replyData, data);
++    
++}
++
++//Andrew Deryabin: customData support: end code
+     
+ 
+ }
+diff -ruN distr/rosegarden-1.7.3/src/base/AudioPluginInstance.h rosegarden-1.7.3/src/base/AudioPluginInstance.h
+--- distr/rosegarden-1.7.3/src/base/AudioPluginInstance.h	2009-02-04 07:57:37.000000000 +0400
++++ rosegarden-1.7.3/src/base/AudioPluginInstance.h	2009-03-03 20:28:37.094129156 +0400
+@@ -142,6 +142,13 @@
+     void setConfigurationValue(std::string k, std::string v);
+ 
+     std::string getDistinctiveConfigurationText() const;
++    
++    //Andrew Deryabin: customData support
++    bool setCustomData(std::string &data);
++    void sendCustomData();
++    //Andrew Deryabin: customData support: end code
++    
++    
+ 
+ protected:
+ 
+@@ -159,6 +166,10 @@
+     std::string                        m_program;
+ 
+     ConfigMap                          m_config;
++    
++    //Andrew Deryabin: customData support
++    std::vector<char>                  m_customData;
++    //Andrew Deryabin: customData support: end code
+ };
+ 
+ }
+diff -ruN distr/rosegarden-1.7.3/src/base/AudioPluginInstanceSeq.cpp rosegarden-1.7.3/src/base/AudioPluginInstanceSeq.cpp
+--- distr/rosegarden-1.7.3/src/base/AudioPluginInstanceSeq.cpp	1970-01-01 04:00:00.000000000 +0400
++++ rosegarden-1.7.3/src/base/AudioPluginInstanceSeq.cpp	2009-03-01 23:54:41.000000000 +0400
+@@ -0,0 +1,250 @@
++// -*- c-basic-offset: 4 -*-
++/*
++    Rosegarden
++    A sequencer and musical notation editor.
++    Copyright 2000-2009 the Rosegarden development team.
++    See the AUTHORS file for more details.
++
++    This program is free software; you can redistribute it and/or
++    modify it under the terms of the GNU General Public License as
++    published by the Free Software Foundation; either version 2 of the
++    License, or (at your option) any later version.  See the file
++    COPYING included with this distribution for more information.
++*/
++
++#include "AudioPluginInstance.h"
++#include "Instrument.h"
++
++#include <iostream>
++#include <cstring>
++
++#if (__GNUC__ < 3)
++#include <strstream>
++#define stringstream strstream
++#else
++#include <sstream>
++#endif
++
++namespace Rosegarden
++{
++
++// ------------------ PluginPort ---------------------
++//
++
++PluginPort::PluginPort(int number,
++                       std::string name,
++                       PluginPort::PortType type,
++                       PluginPort::PortDisplayHint hint,
++                       PortData lowerBound,
++                       PortData upperBound,
++		       PortData defaultValue):
++    m_number(number),
++    m_name(name),
++    m_type(type),
++    m_displayHint(hint),
++    m_lowerBound(lowerBound),
++    m_upperBound(upperBound),
++    m_default(defaultValue)
++{
++}
++
++AudioPluginInstance::AudioPluginInstance(unsigned int position):
++    m_mappedId(-1),
++    m_identifier(""),
++    m_position(position),
++    m_assigned(false),
++    m_bypass(false),
++    m_program("")
++{
++}
++
++AudioPluginInstance::AudioPluginInstance(std::string identifier,
++                                         unsigned int position):
++                m_mappedId(-1),
++                m_identifier(identifier),
++                m_position(position),
++                m_assigned(true)
++{
++}
++
++std::string 
++AudioPluginInstance::toXmlString()
++{
++
++    std::stringstream plugin;
++
++    if (m_assigned == false)
++    {
++#if (__GNUC__ < 3)
++        plugin << std::ends;
++#endif
++        return plugin.str();
++    }
++    
++    if (m_position == Instrument::SYNTH_PLUGIN_POSITION) {
++	plugin << "            <synth ";
++    } else {
++	plugin << "            <plugin"
++	       << " position=\""
++	       << m_position
++	       << "\" ";
++    }
++
++    plugin << "identifier=\""
++	   << encode(m_identifier)
++           << "\" bypassed=\"";
++
++    if (m_bypass)
++        plugin << "true\" ";
++    else
++        plugin << "false\" ";
++
++    if (m_program != "") {
++	plugin << "program=\"" << encode(m_program) << "\"";
++    }
++
++    plugin << ">" << std::endl;
++
++    for (unsigned int i = 0; i < m_ports.size(); i++)
++    {
++        plugin << "                <port id=\""
++               << m_ports[i]->number
++               << "\" value=\""
++               << m_ports[i]->value
++               << "\" changed=\""
++               << (m_ports[i]->changedSinceProgramChange ? "true" : "false")
++               << "\"/>" << std::endl;
++    }
++
++    for (ConfigMap::iterator i = m_config.begin(); i != m_config.end(); ++i) {
++	plugin << "                <configure key=\""
++	       << encode(i->first) << "\" value=\""
++	       << encode(i->second) << "\"/>" << std::endl;
++    }
++    
++    if (m_position == Instrument::SYNTH_PLUGIN_POSITION) {
++	plugin << "            </synth>";
++    } else {
++	plugin << "            </plugin>";
++    }
++
++#if (__GNUC__ < 3)
++    plugin << std::endl << std::ends;
++#else
++    plugin << std::endl;
++#endif
++
++    return plugin.str();
++}
++
++
++void
++AudioPluginInstance::addPort(int number, PortData value)
++{
++    m_ports.push_back(new PluginPortInstance(number, value));
++}
++
++
++bool
++AudioPluginInstance::removePort(int number)
++{
++    PortInstanceIterator it = m_ports.begin();
++
++    for (; it != m_ports.end(); ++it)
++    {
++        if ((*it)->number == number)
++        {
++            delete (*it);
++            m_ports.erase(it);
++            return true;
++        }
++    }
++
++    return false;
++}
++
++
++PluginPortInstance* 
++AudioPluginInstance::getPort(int number)
++{
++    PortInstanceIterator it = m_ports.begin();
++
++    for (; it != m_ports.end(); ++it)
++    {
++        if ((*it)->number == number)
++            return *it;
++    }
++
++    return 0;
++}
++
++void
++AudioPluginInstance::clearPorts()
++{
++    PortInstanceIterator it = m_ports.begin();
++    for (; it != m_ports.end(); ++it)
++        delete (*it);
++    m_ports.erase(m_ports.begin(), m_ports.end());
++}
++
++std::string
++AudioPluginInstance::getConfigurationValue(std::string k) const
++{
++    ConfigMap::const_iterator i = m_config.find(k);
++    if (i != m_config.end()) return i->second;
++    return "";
++}
++
++void
++AudioPluginInstance::setProgram(std::string program)
++{
++    m_program = program;
++    
++    PortInstanceIterator it = m_ports.begin();
++    for (; it != m_ports.end(); ++it) {
++	(*it)->changedSinceProgramChange = false;
++    }
++}
++	
++void
++AudioPluginInstance::setConfigurationValue(std::string k, std::string v)
++{
++    m_config[k] = v;
++}
++
++std::string
++AudioPluginInstance::getDistinctiveConfigurationText() const
++{
++    std::string base = getConfigurationValue("load");
++
++    if (base == "") {
++	for (ConfigMap::const_iterator i = m_config.begin();
++	     i != m_config.end(); ++i) {
++
++	    if (!strncmp(i->first.c_str(),
++			 "__ROSEGARDEN__",
++			 strlen("__ROSEGARDEN__"))) continue;
++
++	    if (i->second != "" && i->second[0] == '/') {
++		base = i->second;
++		break;
++	    } else if (base != "") {
++		base = i->second;
++	    }
++	}
++    }
++
++    if (base == "") return "";
++    
++    std::string::size_type s = base.rfind('/');
++    if (s < base.length() - 1) base = base.substr(s + 1);
++
++    std::string::size_type d = base.rfind('.');
++    if (d < base.length() - 1 && d > 0) base = base.substr(0, d);
++
++    return base;
++}
++    
++
++}
++
+diff -ruN distr/rosegarden-1.7.3/src/base/libb64/b64/cdecode.h rosegarden-1.7.3/src/base/libb64/b64/cdecode.h
+--- distr/rosegarden-1.7.3/src/base/libb64/b64/cdecode.h	1970-01-01 04:00:00.000000000 +0400
++++ rosegarden-1.7.3/src/base/libb64/b64/cdecode.h	2005-11-16 02:21:06.000000000 +0400
+@@ -0,0 +1,28 @@
++/*
++cdecode.h - c header for a base64 decoding algorithm
++
++This is part of the libb64 project, and has been placed in the public domain.
++For details, see http://sourceforge.net/projects/libb64
++*/
++
++#ifndef BASE64_CDECODE_H
++#define BASE64_CDECODE_H
++
++typedef enum
++{
++	step_a, step_b, step_c, step_d
++} base64_decodestep;
++
++typedef struct
++{
++	base64_decodestep step;
++	char plainchar;
++} base64_decodestate;
++
++void base64_init_decodestate(base64_decodestate* state_in);
++
++int base64_decode_value(char value_in);
++
++int base64_decode_block(const char* code_in, const int length_in, char* plaintext_out, base64_decodestate* state_in);
++
++#endif /* BASE64_CDECODE_H */
+diff -ruN distr/rosegarden-1.7.3/src/base/libb64/b64/cencode.h rosegarden-1.7.3/src/base/libb64/b64/cencode.h
+--- distr/rosegarden-1.7.3/src/base/libb64/b64/cencode.h	1970-01-01 04:00:00.000000000 +0400
++++ rosegarden-1.7.3/src/base/libb64/b64/cencode.h	2005-11-16 02:21:06.000000000 +0400
+@@ -0,0 +1,32 @@
++/*
++cencode.h - c header for a base64 encoding algorithm
++
++This is part of the libb64 project, and has been placed in the public domain.
++For details, see http://sourceforge.net/projects/libb64
++*/
++
++#ifndef BASE64_CENCODE_H
++#define BASE64_CENCODE_H
++
++typedef enum
++{
++	step_A, step_B, step_C
++} base64_encodestep;
++
++typedef struct
++{
++	base64_encodestep step;
++	char result;
++	int stepcount;
++} base64_encodestate;
++
++void base64_init_encodestate(base64_encodestate* state_in);
++
++char base64_encode_value(char value_in);
++
++int base64_encode_block(const char* plaintext_in, int length_in, char* code_out, base64_encodestate* state_in);
++
++int base64_encode_blockend(char* code_out, base64_encodestate* state_in);
++
++#endif /* BASE64_CENCODE_H */
++
+diff -ruN distr/rosegarden-1.7.3/src/base/libb64/b64/decode.h rosegarden-1.7.3/src/base/libb64/b64/decode.h
+--- distr/rosegarden-1.7.3/src/base/libb64/b64/decode.h	1970-01-01 04:00:00.000000000 +0400
++++ rosegarden-1.7.3/src/base/libb64/b64/decode.h	2005-11-16 02:21:06.000000000 +0400
+@@ -0,0 +1,66 @@
++// :mode=c++:
++/*
++decode.h - c++ wrapper for a base64 decoding algorithm
++
++This is part of the libb64 project, and has been placed in the public domain.
++For details, see http://sourceforge.net/projects/libb64
++*/
++
++#ifndef BASE64_DECODE_H
++#define BASE64_DECODE_H
++
++#include <iostream>
++
++namespace base64
++{
++	
++	extern "C"
++	{
++		#include "cdecode.h"
++	}
++	
++	struct decoder
++	{
++		base64_decodestate _state;
++		int _buffersize;
++		
++		decoder(int buffersize_in = 4096)
++		: _buffersize(buffersize_in)
++		{}
++		int decode(char value_in)
++		{
++			return base64_decode_value(value_in);
++		}
++		int decode(const char* code_in, const int length_in, char* plaintext_out)
++		{
++			return base64_decode_block(code_in, length_in, plaintext_out, &_state);
++		}
++		void decode(std::istream& istream_in, std::ostream& ostream_in)
++		{
++			base64_init_decodestate(&_state);
++			//
++			const int N = _buffersize;
++			char* code = new char[N];
++			char* plaintext = new char[N];
++			int codelength;
++			int plainlength;
++			
++			do
++			{
++				istream_in.read((char*)code, N);
++				codelength = istream_in.gcount();
++				plainlength = decode(code, codelength, plaintext);
++				ostream_in.write((const char*)plaintext, plainlength);
++			}
++			while (istream_in.good() && codelength > 0);
++			//
++			base64_init_decodestate(&_state);
++			
++			delete [] code;
++			delete [] plaintext;
++		}
++	};
++	
++} // namespace base64
++
++#endif // BASE64_DECODE_H
+diff -ruN distr/rosegarden-1.7.3/src/base/libb64/b64/encode.h rosegarden-1.7.3/src/base/libb64/b64/encode.h
+--- distr/rosegarden-1.7.3/src/base/libb64/b64/encode.h	1970-01-01 04:00:00.000000000 +0400
++++ rosegarden-1.7.3/src/base/libb64/b64/encode.h	2005-12-04 22:32:44.000000000 +0400
+@@ -0,0 +1,75 @@
++// :mode=c++:
++/*
++encode.h - c++ wrapper for a base64 encoding algorithm
++
++This is part of the libb64 project, and has been placed in the public domain.
++For details, see http://sourceforge.net/projects/libb64
++*/
++
++#ifndef BASE64_ENCODE_H
++#define BASE64_ENCODE_H
++
++#include <iostream>
++
++namespace base64
++{
++	
++	extern "C" 
++	{
++		#include "cencode.h"
++	}
++	
++	struct encoder
++	{
++		base64_encodestate _state;
++		int _buffersize;
++		
++		encoder(int buffersize_in = 4096)
++		: _buffersize(buffersize_in)
++		{}
++		int encode(char value_in)
++		{
++			return base64_encode_value(value_in);
++		}
++		int encode(const char* code_in, const int length_in, char* plaintext_out)
++		{
++			return base64_encode_block(code_in, length_in, plaintext_out, &_state);
++		}
++		int encode_end(char* plaintext_out)
++		{
++			return base64_encode_blockend(plaintext_out, &_state);
++		}
++		void encode(std::istream& istream_in, std::ostream& ostream_in)
++		{
++			base64_init_encodestate(&_state);
++			//
++			const int N = _buffersize;
++			char* plaintext = new char[N];
++			char* code = new char[2*N];
++			int plainlength;
++			int codelength;
++			
++			do
++			{
++				istream_in.read(plaintext, N);
++				plainlength = istream_in.gcount();
++				//
++				codelength = encode(plaintext, plainlength, code);
++				ostream_in.write(code, codelength);
++			}
++			while (istream_in.good() && plainlength > 0);
++			
++			codelength = encode_end(code);
++			ostream_in.write(code, codelength);
++			//
++			base64_init_encodestate(&_state);
++			
++			delete [] code;
++			delete [] plaintext;
++		}
++	};
++	
++} // namespace base64
++
++#endif // BASE64_ENCODE_H
++
+diff -ruN distr/rosegarden-1.7.3/src/base/libb64/cdecode.c rosegarden-1.7.3/src/base/libb64/cdecode.c
+--- distr/rosegarden-1.7.3/src/base/libb64/cdecode.c	1970-01-01 04:00:00.000000000 +0400
++++ rosegarden-1.7.3/src/base/libb64/cdecode.c	2009-03-03 14:56:57.033123922 +0400
+@@ -0,0 +1,87 @@
++/*
++cdecoder.c - c source to a base64 decoding algorithm implementation
++
++This is part of the libb64 project, and has been placed in the public domain.
++For details, see http://sourceforge.net/projects/libb64
++*/
++
++#include <libb64/b64/cdecode.h>
++
++int base64_decode_value(char value_in)
++{
++	static const char decoding[] = {62,-1,-1,-1,63,52,53,54,55,56,57,58,59,60,61,-1,-1,-1,-2,-1,-1,-1,0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,-1,-1,-1,-1,-1,-1,26,27,28,29,30,31,32,33,34,35,36,37,38,39,40,41,42,43,44,45,46,47,48,49,50,51};
++	static const char decoding_size = sizeof(decoding);
++	value_in -= 43;
++	if (value_in < 0 || value_in > decoding_size) return -1;
++	return decoding[(int)value_in];
++}
++
++void base64_init_decodestate(base64_decodestate* state_in)
++{
++	state_in->step = step_a;
++	state_in->plainchar = 0;
++}
++
++int base64_decode_block(const char* code_in, const int length_in, char* plaintext_out, base64_decodestate* state_in)
++{
++	const char* codechar = code_in;
++	char* plainchar = plaintext_out;
++	char fragment;
++	
++	*plainchar = state_in->plainchar;
++	
++	switch (state_in->step)
++	{
++		while (1)
++		{
++	case step_a:
++			do {
++				if (codechar == code_in+length_in)
++				{
++					state_in->step = step_a;
++					state_in->plainchar = *plainchar;
++					return plainchar - plaintext_out;
++				}
++				fragment = (char)base64_decode_value(*codechar++);
++			} while (fragment < 0);
++			*plainchar    = (fragment & 0x03f) << 2;
++	case step_b:
++			do {
++				if (codechar == code_in+length_in)
++				{
++					state_in->step = step_b;
++					state_in->plainchar = *plainchar;
++					return plainchar - plaintext_out;
++				}
++				fragment = (char)base64_decode_value(*codechar++);
++			} while (fragment < 0);
++			*plainchar++ |= (fragment & 0x030) >> 4;
++			*plainchar    = (fragment & 0x00f) << 4;
++	case step_c:
++			do {
++				if (codechar == code_in+length_in)
++				{
++					state_in->step = step_c;
++					state_in->plainchar = *plainchar;
++					return plainchar - plaintext_out;
++				}
++				fragment = (char)base64_decode_value(*codechar++);
++			} while (fragment < 0);
++			*plainchar++ |= (fragment & 0x03c) >> 2;
++			*plainchar    = (fragment & 0x003) << 6;
++	case step_d:
++			do {
++				if (codechar == code_in+length_in)
++				{
++					state_in->step = step_d;
++					state_in->plainchar = *plainchar;
++					return plainchar - plaintext_out;
++				}
++				fragment = (char)base64_decode_value(*codechar++);
++			} while (fragment < 0);
++			*plainchar++   |= (fragment & 0x03f);
++		}
++	}
++	/* control should not reach here */
++	return plainchar - plaintext_out;
++}
+diff -ruN distr/rosegarden-1.7.3/src/base/libb64/cencode.c rosegarden-1.7.3/src/base/libb64/cencode.c
+--- distr/rosegarden-1.7.3/src/base/libb64/cencode.c	1970-01-01 04:00:00.000000000 +0400
++++ rosegarden-1.7.3/src/base/libb64/cencode.c	2009-03-03 14:57:04.105134401 +0400
+@@ -0,0 +1,108 @@
++/*
++cencoder.c - c source to a base64 encoding algorithm implementation
++
++This is part of the libb64 project, and has been placed in the public domain.
++For details, see http://sourceforge.net/projects/libb64
++*/
++
++#include <libb64/b64/cencode.h>
++
++const int CHARS_PER_LINE = 72;
++
++void base64_init_encodestate(base64_encodestate* state_in)
++{
++	state_in->step = step_A;
++	state_in->result = 0;
++	state_in->stepcount = 0;
++}
++
++char base64_encode_value(char value_in)
++{
++	static const char* encoding = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
++	if (value_in > 63) return '=';
++	return encoding[(int)value_in];
++}
++
++int base64_encode_block(const char* plaintext_in, int length_in, char* code_out, base64_encodestate* state_in)
++{
++	const char* plainchar = plaintext_in;
++	const char* const plaintextend = plaintext_in + length_in;
++	char* codechar = code_out;
++	char result;
++	char fragment;
++	
++	result = state_in->result;
++	
++	switch (state_in->step)
++	{
++		while (1)
++		{
++	case step_A:
++			if (plainchar == plaintextend)
++			{
++				state_in->result = result;
++				state_in->step = step_A;
++				return codechar - code_out;
++			}
++			fragment = *plainchar++;
++			result = (fragment & 0x0fc) >> 2;
++			*codechar++ = base64_encode_value(result);
++			result = (fragment & 0x003) << 4;
++	case step_B:
++			if (plainchar == plaintextend)
++			{
++				state_in->result = result;
++				state_in->step = step_B;
++				return codechar - code_out;
++			}
++			fragment = *plainchar++;
++			result |= (fragment & 0x0f0) >> 4;
++			*codechar++ = base64_encode_value(result);
++			result = (fragment & 0x00f) << 2;
++	case step_C:
++			if (plainchar == plaintextend)
++			{
++				state_in->result = result;
++				state_in->step = step_C;
++				return codechar - code_out;
++			}
++			fragment = *plainchar++;
++			result |= (fragment & 0x0c0) >> 6;
++			*codechar++ = base64_encode_value(result);
++			result  = (fragment & 0x03f) >> 0;
++			*codechar++ = base64_encode_value(result);
++			
++			++(state_in->stepcount);
++			if (state_in->stepcount == CHARS_PER_LINE/4)
++			{
++				*codechar++ = '\n';
++				state_in->stepcount = 0;
++			}
++		}
++	}
++	/* control should not reach here */
++	return codechar - code_out;
++}
++
++int base64_encode_blockend(char* code_out, base64_encodestate* state_in)
++{
++	char* codechar = code_out;
++	
++	switch (state_in->step)
++	{
++	case step_B:
++		*codechar++ = base64_encode_value(state_in->result);
++		*codechar++ = '=';
++		*codechar++ = '=';
++		break;
++	case step_C:
++		*codechar++ = base64_encode_value(state_in->result);
++		*codechar++ = '=';
++		break;
++	case step_A:
++		break;
++	}
++	*codechar++ = '\n';
++	
++	return codechar - code_out;
++}
+diff -ruN distr/rosegarden-1.7.3/src/base/Studio.cpp rosegarden-1.7.3/src/base/Studio.cpp
+--- distr/rosegarden-1.7.3/src/base/Studio.cpp	2009-02-04 07:57:37.000000000 +0400
++++ rosegarden-1.7.3/src/base/Studio.cpp	2009-02-27 02:01:16.000000000 +0400
+@@ -337,7 +337,7 @@
+ 		std::cerr << "WARNING: Unknown device id " << (*di)
+ 			  << " in Studio::toXmlString" << std::endl;
+ 	    } else {
+-		studio << d->toXmlString() << endl << endl;
++		studio << d->toXmlString() << endl << endl;		
+ 	    }
+ 	}
+     }
+diff -ruN distr/rosegarden-1.7.3/src/BaseFileList.txt rosegarden-1.7.3/src/BaseFileList.txt
+--- distr/rosegarden-1.7.3/src/BaseFileList.txt	2009-02-04 07:57:38.000000000 +0400
++++ rosegarden-1.7.3/src/BaseFileList.txt	2009-03-03 14:55:30.945134084 +0400
+@@ -5,8 +5,6 @@
+ 	base/AudioDevice.h
+ 	base/AudioLevel.cpp
+ 	base/AudioLevel.h
+-	base/AudioPluginInstance.cpp
+-	base/AudioPluginInstance.h
+ 	base/BaseProperties.cpp
+ 	base/BaseProperties.h
+ 	base/BasicQuantizer.cpp
+@@ -100,4 +98,6 @@
+ 	base/ViewElement.h
+ 	base/XmlExportable.cpp
+ 	base/XmlExportable.h 
++	base/libb64/cencode.c
++	base/libb64/cdecode.c
+ )
+diff -ruN distr/rosegarden-1.7.3/src/CMakeLists.txt rosegarden-1.7.3/src/CMakeLists.txt
+--- distr/rosegarden-1.7.3/src/CMakeLists.txt	2009-02-04 07:57:38.000000000 +0400
++++ rosegarden-1.7.3/src/CMakeLists.txt	2009-03-01 23:55:53.000000000 +0400
+@@ -69,6 +69,7 @@
+ KDE3_ADD_EXECUTABLE(rosegardensequencer 
+     ${snd_SRCS}
+     ${sequencer_SRCS}
++    base/AudioPluginInstanceSeq.cpp
+ )
+ 
+ IF(USE_PCH)
+@@ -130,6 +131,7 @@
+     #${gui_SRCS}
+     #${segmentcanvas_SRCS}
+     gui/application/main.cpp
++    base/AudioPluginInstance.cpp
+ )
+ 
+ IF(USE_PCH)
+diff -ruN distr/rosegarden-1.7.3/src/document/RosegardenGUIDoc.cpp rosegarden-1.7.3/src/document/RosegardenGUIDoc.cpp
+--- distr/rosegarden-1.7.3/src/document/RosegardenGUIDoc.cpp	2009-02-04 07:57:38.000000000 +0400
++++ rosegarden-1.7.3/src/document/RosegardenGUIDoc.cpp	2009-03-03 18:45:47.175118342 +0400
+@@ -1091,6 +1091,10 @@
+                          (*portIt)->value);
+                     }
+                 }
++                
++                // Set the customData
++                //
++                plugin->sendCustomData();
+             }
+         }
+     }
+@@ -1241,12 +1245,13 @@
+     //
+     outStream << strtoqstr(getComposition().toXmlString())
+     << endl << endl;
+-
++    
+     outStream << strtoqstr(getAudioFileManager().toXmlString())
+     << endl << endl;
+ 
+     outStream << strtoqstr(getConfiguration().toXmlString())
+     << endl << endl;
++    
+ 
+     long totalEvents = 0;
+     for (Composition::iterator segitr = m_composition.begin();
+@@ -1301,7 +1306,7 @@
+     // Send out the studio - a self contained command
+     //
+     outStream << strtoqstr(m_studio.toXmlString()) << endl << endl;
+-
++    
+ 
+     // Send out the appearance data
+     outStream << "<appearance>" << endl;
+diff -ruN distr/rosegarden-1.7.3/src/document/RoseXmlHandler.cpp rosegarden-1.7.3/src/document/RoseXmlHandler.cpp
+--- distr/rosegarden-1.7.3/src/document/RoseXmlHandler.cpp	2009-02-04 07:57:38.000000000 +0400
++++ rosegarden-1.7.3/src/document/RoseXmlHandler.cpp	2009-03-03 20:32:29.771139952 +0400
+@@ -1801,7 +1801,17 @@
+         if (m_plugin) {
+             m_plugin->setConfigurationValue(qstrtostr(key), qstrtostr(value));
+         }
+-
++    //Andrew Deryabin: vst chunks support
++    } else if(lcName == "customdata") {
++        
++        if (m_section != InPlugin) {
++            m_errorString = "Found customData outside Plugin";
++            return false;
++        }
++        std::string value = atts.value("value");
++        m_plugin->setCustomData(value);       
++        
++    //Andrew Deryabin: vst chunks support: end code
+     } else if (lcName == "metronome") {
+ 
+         if (m_section != InStudio) {
+diff -ruN distr/rosegarden-1.7.3/src/sequencer/RosegardenSequencerApp.cpp rosegarden-1.7.3/src/sequencer/RosegardenSequencerApp.cpp
+--- distr/rosegarden-1.7.3/src/sequencer/RosegardenSequencerApp.cpp	2009-02-04 07:57:35.000000000 +0400
++++ rosegarden-1.7.3/src/sequencer/RosegardenSequencerApp.cpp	2009-03-03 19:41:43.428150254 +0400
+@@ -1659,6 +1659,8 @@
+ }
+ 
+ 
++
++
+ void RosegardenSequencerApp::dumpFirstSegment()
+ {
+     SEQUENCER_DEBUG << "Dumping 1st segment data :\n";
+@@ -1838,6 +1840,43 @@
+     SEQUENCER_DEBUG << "RosegardenSequencerApp::incrementTransportToken: incrementing to " << m_transportToken << endl;
+ }
+ 
++
++//Deryabin Andrew: custom data support
++    
++QByteArray RosegardenSequencerApp::getCustomData(int pluginId)
++{
++    QByteArray customData;    
++    MappedObject *object = m_studio->getObjectById(pluginId);
++
++    if (object) {
++        MappedPluginSlot *slot =
++            dynamic_cast<MappedPluginSlot *>(object);
++        if (slot) {
++            customData = slot->getCustomData();            
++        }
++    }
++
++    return customData;
++    
++}
++
++bool RosegardenSequencerApp::setCustomData(const QByteArray& data, int pluginId)
++{
++    MappedObject *object = m_studio->getObjectById(pluginId);
++    bool ret = false;
++    if (object) {        
++        MappedPluginSlot *slot =
++            dynamic_cast<MappedPluginSlot *>(object);
++        if (slot) {
++            ret = slot->setCustomData(data.data(), data.size());            
++        }
++    }
++
++    return ret;
++}
++    
++//Deryabin Andrew: custom data support: end code
++
+ }
+ 
+ #include "RosegardenSequencerApp.moc"
+diff -ruN distr/rosegarden-1.7.3/src/sequencer/RosegardenSequencerApp.h rosegarden-1.7.3/src/sequencer/RosegardenSequencerApp.h
+--- distr/rosegarden-1.7.3/src/sequencer/RosegardenSequencerApp.h	2009-02-04 07:57:35.000000000 +0400
++++ rosegarden-1.7.3/src/sequencer/RosegardenSequencerApp.h	2009-03-01 20:02:15.000000000 +0400
+@@ -313,6 +313,13 @@
+     // Get a status report
+     // 
+     virtual QString getStatusLog();
++    
++    //Deryabin Andrew: custom data support
++    
++    virtual QByteArray getCustomData(int pluginId);
++    virtual bool setCustomData(const QByteArray& data, int pluginId);
++    
++    //Deryabin Andrew: custom data support: end code
+ 
+     //
+     //
+@@ -449,6 +456,7 @@
+     void setEndOfCompReached(bool e) { m_isEndOfCompReached = e; }
+     bool isEndOfCompReached() { return m_isEndOfCompReached; }
+     void incrementTransportToken();
++    
+ 
+     //--------------- Data members ---------------------------------
+ 
+diff -ruN distr/rosegarden-1.7.3/src/sequencer/RosegardenSequencerIface.h rosegarden-1.7.3/src/sequencer/RosegardenSequencerIface.h
+--- distr/rosegarden-1.7.3/src/sequencer/RosegardenSequencerIface.h	2009-02-04 07:57:35.000000000 +0400
++++ rosegarden-1.7.3/src/sequencer/RosegardenSequencerIface.h	2009-03-01 20:01:59.000000000 +0400
+@@ -350,6 +350,13 @@
+         drops in or out.
+     */
+     virtual void remapTracks() = 0;
++    
++    //Deryabin Andrew: custom data support
++    
++    virtual QByteArray getCustomData(int pluginId) = 0;
++    virtual bool setCustomData(const QByteArray& data, int pluginId) = 0;
++    
++    //Deryabin Andrew: custom data support: end code
+ };
+ 
+ }
+diff -ruN distr/rosegarden-1.7.3/src/sound/DSSIPluginFactory.cpp rosegarden-1.7.3/src/sound/DSSIPluginFactory.cpp
+--- distr/rosegarden-1.7.3/src/sound/DSSIPluginFactory.cpp	2009-02-04 07:57:35.000000000 +0400
++++ rosegarden-1.7.3/src/sound/DSSIPluginFactory.cpp	2009-03-01 15:38:17.000000000 +0400
+@@ -161,7 +161,7 @@
+                                      unsigned int channels)
+ {
+     const DSSI_Descriptor *descriptor = getDSSIDescriptor(identifier);
+-
++    
+     if (descriptor) {
+ 
+         DSSIPluginInstance *instance =
+@@ -169,11 +169,10 @@
+             (this, instrument, identifier, position, sampleRate, blockSize, channels,
+              descriptor);
+ 
+-        m_instances.insert(instance);
+-
++        m_instances.insert(instance);        
+         return instance;
+     }
+-
++    
+     return 0;
+ }
+ 
+@@ -183,6 +182,8 @@
+ {
+     QString type, soname, label;
+     PluginIdentifier::parseIdentifier(identifier, type, soname, label);
++    
++    std::cerr << "DSSIPluginFactory::getDSSIDescriptor identifier = " << identifier << std::endl;
+ 
+     if (m_libraryHandles.find(soname) == m_libraryHandles.end()) {
+         loadLibrary(soname);
+@@ -383,6 +384,33 @@
+     }
+ }
+ 
++//Andrew Deryabin: customData support
++    
++DSSIPluginInstance *DSSIPluginFactory::getDSSIPluginInstanceFor(QString identifier, unsigned int instrumentId, int position)
++{
++    std::set<RunnablePluginInstance *>::iterator it;
++    std::cerr << "DSSIPluginFactory::getDSSIPluginInstanceFor: searchig for id=" << identifier << ", instr=" << instrumentId << std::endl;
++    std::cerr << "m_instances size=" << m_instances.size() << std::endl;
++    std::cerr << "m_instances base size=" << LADSPAPluginFactory::m_instances.size() << std::endl;
++    for(it = m_instances.begin(); it != m_instances.end(); it++)
++    {        
++        DSSIPluginInstance *instance = (DSSIPluginInstance *)(*it);
++        std::cerr << "cur id=" << instance->getIdentifier() << ", instr=" << instance->getInstrument() << std::endl; 
++        if((instance->getIdentifier() == identifier) && 
++           (instance->getInstrument() == instrumentId))
++        {
++            std::cerr << "SUCCESS: DSSIPluginFactory::getDSSIPluginInstanceFor: found instance for id=" << identifier << ", instrument=" << instrumentId << ", pos=" << position << std::endl; 
++            return instance;
++        }
++    }
++    
++    std::cerr << "ERR: DSSIPluginFactory::getDSSIPluginInstanceFor: not found instance for id=" << identifier << ", instrument=" << instrumentId << ", pos=" << position << std::endl;
++    return 0;
++    
++}
++    
++//Andrew Deryabin: customData support: end code
++
+ 
+ }
+ 
+diff -ruN distr/rosegarden-1.7.3/src/sound/DSSIPluginFactory.h rosegarden-1.7.3/src/sound/DSSIPluginFactory.h
+--- distr/rosegarden-1.7.3/src/sound/DSSIPluginFactory.h	2009-02-04 07:57:35.000000000 +0400
++++ rosegarden-1.7.3/src/sound/DSSIPluginFactory.h	2009-03-01 15:46:04.000000000 +0400
+@@ -41,6 +41,11 @@
+                                                       unsigned int sampleRate,
+                                                       unsigned int blockSize,
+                                                       unsigned int channels);
++    //Andrew Deryabin: customData support
++    
++    DSSIPluginInstance *getDSSIPluginInstanceFor(QString identifier, unsigned int instrumentId, int position);
++    
++    //Andrew Deryabin: customData support: end code
+ 
+ protected:
+     DSSIPluginFactory();
+diff -ruN distr/rosegarden-1.7.3/src/sound/DSSIPluginInstance.cpp rosegarden-1.7.3/src/sound/DSSIPluginInstance.cpp
+--- distr/rosegarden-1.7.3/src/sound/DSSIPluginInstance.cpp	2009-02-04 07:57:35.000000000 +0400
++++ rosegarden-1.7.3/src/sound/DSSIPluginInstance.cpp	2009-03-03 17:12:04.909129203 +0400
+@@ -1194,6 +1194,41 @@
+ }
+ 
+ 
++//Andrew Deryabin: support for custom data
++void *DSSIPluginInstance::getCustomData(unsigned long *DataLength)
++{
++    *DataLength = 0;
++    if(m_descriptor && m_instanceHandle && m_descriptor->getCustomData)
++    {
++        const LADSPA_Descriptor *ladspaDescriptor = m_descriptor->LADSPA_Plugin;
++        std::string name = ladspaDescriptor->Name;
++        if ((name.length()> 4) && name.substr(name.length() - 4) == " VST")
++        {
++
++            void *Data = 0;
++            if(m_descriptor->getCustomData(m_instanceHandle, &Data, DataLength))
++                return Data;
++        }
++    }
++    return 0;
++}
++
++bool DSSIPluginInstance::setCustomData(void *Data, unsigned long DataLength)
++{
++    if(m_descriptor && m_instanceHandle && m_descriptor->setCustomData)
++    {
++        const LADSPA_Descriptor *ladspaDescriptor = m_descriptor->LADSPA_Plugin;
++        std::string name = ladspaDescriptor->Name;
++        if ((name.length()> 4) && name.substr(name.length() - 4) == " VST")
++        {
++            return m_descriptor->setCustomData(m_instanceHandle, Data, DataLength);
++        }
++    }
++    return false;
++    
++}
++//Andrew Deryabin: support for custom data: end code
++
+ 
+ }
+ 
+diff -ruN distr/rosegarden-1.7.3/src/sound/DSSIPluginInstance.h rosegarden-1.7.3/src/sound/DSSIPluginInstance.h
+--- distr/rosegarden-1.7.3/src/sound/DSSIPluginInstance.h	2009-02-04 07:57:35.000000000 +0400
++++ rosegarden-1.7.3/src/sound/DSSIPluginInstance.h	2009-03-03 17:12:15.149134758 +0400
+@@ -75,6 +75,11 @@
+ 
+     virtual bool isInGroup() const { return m_grouped; }
+     virtual void detachFromGroup();
++    
++    //Andrew Deryabin: support for custom data
++    virtual void *getCustomData(unsigned long *DataLength);
++    virtual bool setCustomData(void *Data, unsigned long DataLength);
++    //Andrew Deryabin: support for custom data: end code
+ 
+ protected:
+     // To be constructed only by DSSIPluginFactory
+diff -ruN distr/rosegarden-1.7.3/src/sound/LADSPAPluginFactory.h rosegarden-1.7.3/src/sound/LADSPAPluginFactory.h
+--- distr/rosegarden-1.7.3/src/sound/LADSPAPluginFactory.h	2009-02-04 07:57:35.000000000 +0400
++++ rosegarden-1.7.3/src/sound/LADSPAPluginFactory.h	2009-03-01 15:45:42.000000000 +0400
+@@ -19,6 +19,7 @@
+ #ifdef HAVE_LADSPA
+ 
+ #include "PluginFactory.h"
++#include "DSSIPluginInstance.h"
+ #include <ladspa.h>
+ 
+ #include <vector>
+@@ -55,7 +56,7 @@
+     MappedObjectValue getPortMaximum(const LADSPA_Descriptor *, int port);
+     MappedObjectValue getPortDefault(const LADSPA_Descriptor *, int port);
+     int getPortDisplayHint(const LADSPA_Descriptor *, int port);
+-
++    
+ protected:
+     LADSPAPluginFactory();
+     friend class PluginFactory;
+diff -ruN distr/rosegarden-1.7.3/src/sound/MappedStudio.cpp rosegarden-1.7.3/src/sound/MappedStudio.cpp
+--- distr/rosegarden-1.7.3/src/sound/MappedStudio.cpp	2009-02-04 07:57:35.000000000 +0400
++++ rosegarden-1.7.3/src/sound/MappedStudio.cpp	2009-03-03 19:41:55.364139712 +0400
+@@ -18,6 +18,7 @@
+ #include "MappedStudio.h"
+ #include "SoundDriver.h"
+ #include "PluginFactory.h"
++#include "DSSIPluginFactory.h"
+ 
+ #include <pthread.h> // for mutex
+ 
+@@ -1349,6 +1350,49 @@
+     return 0;
+ }
+ 
++//Deryabin Andrew: custom data support
++QByteArray MappedPluginSlot::getCustomData()
++{
++    QByteArray customData;
++
++    std::cerr << "MappedPluginSlot::getCustomData: getting custom data from plugin" << std::endl;
++    DSSIPluginFactory *dssi_factory = dynamic_cast<DSSIPluginFactory *> (PluginFactory::instance("dssi"));
++    if(dssi_factory)
++    {
++        DSSIPluginInstance *dssi_instance = dssi_factory->getDSSIPluginInstanceFor(m_identifier, m_instrument, m_position);
++        unsigned long DataLength;
++        void *Data = dssi_instance->getCustomData(&DataLength);
++        if(Data)
++        {
++            std::cerr << "MappedPluginSlot::getCustomData: customData length=" << DataLength << std::endl;
++            customData.resize(DataLength);
++            for(unsigned long i = 0; i < DataLength; i++)
++            {
++                customData[i] = ((unsigned char *)Data)[i];
++            }
++        }
++    }
++
++    return customData;
++}
++
++bool MappedPluginSlot::setCustomData(void *Data, unsigned long DataLength)
++{
++    DSSIPluginFactory *dssi_factory = dynamic_cast<DSSIPluginFactory *> (PluginFactory::instance("dssi"));
++    if(dssi_factory)
++    {
++        DSSIPluginInstance *dssi_instance = dssi_factory->getDSSIPluginInstanceFor(m_identifier, m_instrument, m_position);
++        int err = dssi_instance->setCustomData(Data, DataLength);
++        if(err)
++        {
++            return true;
++        }
++    }
++    return false;
++    
++}
++//Deryabin Andrew: custom data support: end code
++
+ void
+ MappedPluginSlot::setProperty(const MappedObjectProperty &property,
+                               MappedObjectValue value)
+diff -ruN distr/rosegarden-1.7.3/src/sound/MappedStudio.h rosegarden-1.7.3/src/sound/MappedStudio.h
+--- distr/rosegarden-1.7.3/src/sound/MappedStudio.h	2009-02-04 07:57:35.000000000 +0400
++++ rosegarden-1.7.3/src/sound/MappedStudio.h	2009-03-03 17:05:19.171155831 +0400
+@@ -477,6 +477,11 @@
+ 
+     QString getProgram(int bank, int program);
+     unsigned long getProgram(QString name); // rv is bank << 16 + program
++    
++    //Deryabin Andrew: custom data support
++    QByteArray getCustomData();
++    bool setCustomData(void *Data, unsigned long DataLength);
++    //Deryabin Andrew: custom data support: end code
+ 
+ protected:
+     QString                   m_identifier;
