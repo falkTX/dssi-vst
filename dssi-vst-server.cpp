@@ -62,6 +62,7 @@ static bool alive = false;
 static int bufferSize = 0;
 static int sampleRate = 0;
 static bool guiVisible = false;
+static bool needIdle = false;
 
 static RemotePluginDebugLevel debugLevel = RemotePluginDebugSetup;
 static pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
@@ -799,7 +800,7 @@ hostCallback(AEffect *plugin, long opcode, long index,
 	if (debugLevel > 1) {
 	    cerr << "dssi-vst-server[2]: audioMasterNeedIdle requested" << endl;
 	}
-	// might be nice to handle this better
+  needIdle=true;
 	rv = 1;
 	break;
 
@@ -1401,6 +1402,28 @@ WinMain(HINSTANCE hInst, HINSTANCE hPrevInst, LPSTR cmdline, int cmdshow)
 	cerr << "dssi-vst-server[1]: created audio thread" << endl;
     }
 
+    /* create a dummy window for timer events - this bit based on fst
+     * by Torben Hohn, patch worked out by Robert Jonsson - thanks! */
+    if ((hInst = GetModuleHandleA (NULL)) == NULL) {
+	cerr << "can't get module handle" << endl;
+	return 1;
+    }
+
+    HWND window;
+    if ((window = CreateWindowExA
+	 (0, "dssi-vst", "dummy",
+	  WS_OVERLAPPEDWINDOW & ~WS_THICKFRAME & ~WS_MAXIMIZEBOX,
+	  9999, 9999,
+	  1, 1,
+	  NULL, NULL,
+	  hInst,
+	  NULL )) == NULL) {
+	cerr << "cannot create dummy timer window" << endl;
+    }
+    if (!SetTimer (window, 1000, 20, NULL)) {
+	cerr << "cannot set timer on window" << endl;
+    }
+
     ready = true;
 
     MSG msg;
@@ -1409,6 +1432,17 @@ WinMain(HINSTANCE hInst, HINSTANCE hPrevInst, LPSTR cmdline, int cmdshow)
 
 	while (!exiting && PeekMessage(&msg, 0, 0, 0, PM_REMOVE)) {
 	    DispatchMessage(&msg);
+
+	    /* this bit based on fst by Torben Hohn, patch worked out
+	     * by Robert Jonsson - thanks! */
+	    if (msg.message == WM_TIMER) {
+		plugin->dispatcher (plugin, effEditIdle, 0, 0, NULL, 0);
+		if (needIdle) {
+		    if (plugin) {
+			plugin->dispatcher(plugin, 53, 0, 0, NULL, 0);
+		    }
+		}
+	    }
 	}
 
 	if (tryGui && haveGui && !guiVisible) {
