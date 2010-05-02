@@ -5,17 +5,13 @@ dssi-vst: a DSSI plugin wrapper for VST plugins
 This is a DSSI plugin wrapper for VST effects and instruments with GUI
 support.
 
-Copyright (c) 2004-2008 Chris Cannam, cannam@all-day-breakfast.com.
+Copyright (c) 2004-2010 Chris Cannam, cannam@all-day-breakfast.com.
 
-This is the 0.8 release of dssi-vst.
+This is the 0.9 release of dssi-vst.  The only change since 0.8 is a
+fix to plugin idle handling thanks to Robert Jonsson and Torben Hohn.
 
-Changes since version 0.7:
-
- * The Makefile is now set up for 64-bit Linux systems (with
-   compatibility libraries for 32-bit code) as well as 32-bit ones.
-   See "Building on 64-bit systems" below.
-
- * A couple of other minor fixes are also included.
+The 0.8 release added 64-bit support in the Makefile and a few other
+fixes.
 
 The 0.7 release added a LADSPA descriptor as well as DSSI, contained
 several build fixes, and switched to jack_client_open in vsthost for
