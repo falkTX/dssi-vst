@@ -17,6 +17,7 @@
 #include <sys/types.h>
 #include <sys/wait.h>
 #include <errno.h>
+#include <cstdio>
 #include <stdlib.h>
 
 #include "rdwrops.h"

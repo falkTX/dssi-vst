@@ -11,6 +11,7 @@
 
 #include <errno.h>
 #include <unistd.h>
+#include <cstdio>
 
 //#define DEBUG_RDWR 1
 

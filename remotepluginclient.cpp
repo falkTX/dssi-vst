@@ -17,6 +17,7 @@
 #include <iostream>
 #include <errno.h>
 #include <stdlib.h>
+#include <cstdio>
 #include <string.h>
 
 #include "rdwrops.h"
