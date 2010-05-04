@@ -16,6 +16,7 @@
 #include <fcntl.h>
 #include <sys/un.h>
 #include <sys/poll.h>
+#include <sys/stat.h>
 #include <sys/time.h>
 #include <unistd.h>
 #include <time.h>

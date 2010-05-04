@@ -14,6 +14,7 @@
 #include <sys/socket.h>
 #include <fcntl.h>
 #include <sys/un.h>
+#include <sys/stat.h>
 #include <dirent.h>
 #include <unistd.h>
 #include <cstdlib>

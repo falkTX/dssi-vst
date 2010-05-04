@@ -9,6 +9,7 @@
 
 #include <sys/un.h>
 #include <sys/socket.h>
+#include <sys/stat.h>
 #include <sys/poll.h>
 #include <fcntl.h>
 #include <iostream>

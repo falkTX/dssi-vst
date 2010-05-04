@@ -71,7 +71,7 @@ dssi-vst.so:	dssi-vst.cpp libremoteplugin.a remotevstclient.o $(HEADERS)
 		g++ -shared -Wl,-Bsymbolic -g3 $(CXXFLAGS) -o dssi-vst.so dssi-vst.cpp remotevstclient.o $(LDFLAGS) -L. -lremoteplugin -lasound
 
 vsthost:	vsthost.cpp libremoteplugin.a remotevstclient.o $(HEADERS)
-		g++ $(CXXFLAGS) vsthost.cpp remotevstclient.o -o vsthost $(LDFLAGS) -L. -lremoteplugin -ljack -lasound
+		g++ $(CXXFLAGS) vsthost.cpp remotevstclient.o -o vsthost $(LDFLAGS) -L. -lremoteplugin -ljack -lasound -lpthread
 
 dssi-vst_gui:	dssi-vst_gui.cpp rdwrops.h
 		g++ $(CXXFLAGS) dssi-vst_gui.cpp rdwrops.o -o dssi-vst_gui $(LDFLAGS) -llo
