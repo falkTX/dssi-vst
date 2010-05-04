@@ -1,0 +1,15 @@
+diff -ru distr/dssi-1.0.0/dssi/dssi.h dssi-1.0.0/dssi/dssi.h
+--- distr/dssi-1.0.0/dssi/dssi.h	2009-01-05 01:45:27.000000000 +0400
++++ dssi-1.0.0/dssi/dssi.h	2009-03-01 12:09:55.000000000 +0400
+@@ -374,6 +374,11 @@
+                                        unsigned long     SampleCount,
+                                        snd_seq_event_t **Events,
+                                        unsigned long    *EventCounts);
++    //Andrew Deryabin: support for custom data
++    int (*setCustomData)(LADSPA_Handle Instance, void *Data, unsigned long DataLength);
++    int (*getCustomData)(LADSPA_Handle Instance, void **Data, unsigned long *DataLength);
++    //Andrew Deryabin: support for custom data: end code
++    
+ } DSSI_Descriptor;
+ 
+ /**

@@ -415,3 +415,4 @@ RemoteVSTClient::queryPlugins(std::vector<PluginRecord> &plugins)
     }
 }
 
+

@@ -492,3 +492,4 @@ RemotePluginClient::hideGUI()
     writeOpcode(m_controlRequestFd, RemotePluginHideGUI);
 }
 
+
