@@ -567,7 +567,7 @@ RemoteVSTServer::hideGUI()
     if (m_guiFifoFd >= 0) {
 	int fd = m_guiFifoFd;
 	m_guiFifoFd = -1;
-	close(m_guiFifoFd);
+	close(fd);
     }
 
     ShowWindow(hWnd, SW_HIDE);
