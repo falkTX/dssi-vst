@@ -1295,7 +1295,7 @@ WinMain(HINSTANCE hInst, HINSTANCE hPrevInst, LPSTR cmdline, int cmdshow)
 	cerr << "dssi-vst-server[1]: plugin has a GUI" << endl;
     }
 
-    if (!plugin->flags & effFlagsCanReplacing) {
+    if (!(plugin->flags & effFlagsCanReplacing)) {
 	cerr << "dssi-vst-server: ERROR: Plugin does not support processReplacing (required)"
 	     << endl;
 	return 1;
