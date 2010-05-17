@@ -281,7 +281,7 @@ main(int argc, char **argv)
 	if (!ready) {
 	    struct timeval tv1;
 	    gettimeofday(&tv1, NULL);
-	    if (tv1.tv_sec > tv.tv_sec + 15) {
+	    if (tv1.tv_sec > tv.tv_sec + 40) {
 		cerr << "dssi-vst_gui: No contact from plugin -- timed out on startup" << endl;
 		lo_send(hostaddr,
 			(std::string(hostpath) + "/exiting").c_str(),

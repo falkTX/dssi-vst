@@ -109,7 +109,7 @@ RemotePluginClient::syncStartup()
     // for this and the process fd anyway.
 
     bool connected = false;
-    int timeout = 15;
+    int timeout = 40;
 
     for (int attempt = 0; attempt < timeout; ++attempt) {
 

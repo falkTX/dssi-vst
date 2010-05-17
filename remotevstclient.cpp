@@ -360,7 +360,7 @@ RemoteVSTClient::queryPlugins(std::vector<PluginRecord> &plugins)
     pfd.fd = fd;
     pfd.events = POLLIN;
     int sec;
-    int timeout = 15;
+    int timeout = 40;
 
     for (sec = 0; sec < timeout; ++sec) {
 
