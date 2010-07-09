@@ -143,6 +143,7 @@ DSSIVSTPluginInstance::DSSIVSTPluginInstance(std::string dllName,
     m_audioOutCount(0),
     m_programs(0),
     m_programCount(0),
+    m_alsaDecoder(0),
     m_pendingProgram(false),
     m_plugin(0),
     m_ok(false)
