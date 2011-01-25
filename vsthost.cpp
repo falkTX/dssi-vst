@@ -38,7 +38,6 @@ static bool ready = false;
 static bool exiting = false;
 
 static snd_seq_t *alsaSeqHandle = 0;
-static int notesOn[128];
 
 struct JackData {
     jack_client_t *client;
@@ -147,24 +146,6 @@ alsaSeqCallback(snd_seq_t *alsaSeqHandle)
 	    if (midiReadIndex == midiWriteIndex + 1) {
 		fprintf(stderr, "WARNING: MIDI stream buffer overflow\n");
 		continue;
-	    }
-
-	    if (ev->type == SND_SEQ_EVENT_NOTEON) {
-
-		int pitch = ev->data.note.note;
-		if (pitch >= 0 && pitch < 128) notesOn[pitch] = 1;
-
-	    } else if (ev->type == SND_SEQ_EVENT_NOTEOFF) {
-		int pitch = ev->data.note.note;
-		if (pitch >= 0 && pitch < 128) {
-		    if (notesOn[pitch]) notesOn[pitch] = 0;
-		    else {
-			fprintf(stderr, "WARNING: NOTE OFF received for pitch %d "
-				"with no preceding NOTE ON, ignoring\n", pitch);
-			pthread_mutex_unlock(&pluginMutex);
-			continue;
-		    }
-		}
 	    }
 
 	    long count = snd_midi_event_decode
