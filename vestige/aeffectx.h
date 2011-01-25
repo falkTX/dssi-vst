@@ -97,6 +97,7 @@ int effEditOpen = 14;
 int effEditClose = 15;
 int effEditIdle = 19;
 int effProcessEvents = 25;
+int effGetProgramNameIndexed = 29;
 int effGetEffectName = 45;
 int effGetParameterProperties = 47; // missing
 int effGetVendorString = 47;

@@ -411,14 +411,19 @@ RemoteVSTServer::getProgramName(int p)
     pthread_mutex_lock(&mutex);
 
     char name[24];
-    // effGetProgramName appears to return the name of the current
-    // program, not program <index> -- though we pass in <index> as
-    // well, just in case
-    long prevProgram =
-	m_plugin->dispatcher(m_plugin, effGetProgram, 0, 0, NULL, 0);
-    m_plugin->dispatcher(m_plugin, effSetProgram, 0, p, NULL, 0);
-    m_plugin->dispatcher(m_plugin, effGetProgramName, p, 0, name, 0);
-    m_plugin->dispatcher(m_plugin, effSetProgram, 0, prevProgram, NULL, 0);
+
+    if (m_plugin->dispatcher(m_plugin, effGetVstVersion, 0, 0, NULL, 0) < 2) {
+
+        long prevProgram =
+            m_plugin->dispatcher(m_plugin, effGetProgram, 0, 0, NULL, 0);
+
+        m_plugin->dispatcher(m_plugin, effSetProgram, 0, p, NULL, 0);
+        m_plugin->dispatcher(m_plugin, effGetProgramName, p, 0, name, 0);
+        m_plugin->dispatcher(m_plugin, effSetProgram, 0, prevProgram, NULL, 0);
+
+    } else {
+        m_plugin->dispatcher(m_plugin, effGetProgramNameIndexed, p, 0, name, 0);
+    }
 
     pthread_mutex_unlock(&mutex);
     return name;
