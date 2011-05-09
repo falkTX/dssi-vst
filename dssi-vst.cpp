@@ -496,6 +496,7 @@ DSSIVSTPlugin::DSSIVSTPlugin()
 
 	ldesc->UniqueID = 6666 + p;
 	ldesc->Label = label;
+	ldesc->Properties = 0;
 	ldesc->Name = strdup(std::string(rec.pluginName + " VST").c_str());
 	ldesc->Maker = strdup(rec.vendorName.c_str());
 	ldesc->Copyright = strdup(ldesc->Maker);
