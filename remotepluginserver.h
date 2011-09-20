@@ -57,7 +57,6 @@ public:
     virtual void         showGUI(std::string guiData) { } 
     virtual void         hideGUI() { }
 
-    void dispatch(int timeout = -1); // may throw RemotePluginClosedException
     void dispatchControl(int timeout = -1); // may throw RemotePluginClosedException
     void dispatchProcess(int timeout = -1); // may throw RemotePluginClosedException
 
