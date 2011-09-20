@@ -53,7 +53,7 @@ distclean:	clean
 		rm -f $(TARGETS) dssi-vst-scanner dssi-vst-server *~ *.bak
 
 %.exe.so:	%.cpp libremoteplugin.w32.a $(HEADERS)
-		wineg++ -m32 $(CXXFLAGS) $< -o $* $(LDFLAGS) -L. -lremoteplugin.w32 -lpthread
+		wineg++ -m32 $(CXXFLAGS) $< -o $* $(LDFLAGS) -L. -lremoteplugin.w32 -lpthread -lrt
 
 libremoteplugin.a:	remotepluginclient.o remotepluginserver.o rdwrops.o paths.o
 		ar r $@ $^
