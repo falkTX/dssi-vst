@@ -286,7 +286,7 @@ RemotePluginClient::setSampleRate(int s)
 void
 RemotePluginClient::reset()
 {
-    writeOpcode(m_processFd, RemotePluginReset);
+    writeOpcode(m_controlRequestFd, RemotePluginReset);
     if (m_shmSize > 0) {
 	memset(m_shm, 0, m_shmSize);
     }

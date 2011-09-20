@@ -320,10 +320,6 @@ RemotePluginServer::dispatchProcessEvents()
 	setSampleRate(readInt(m_processFd));
 	break;
     
-    case RemotePluginReset:
-	reset();
-	break;
-
     default:
 	std::cerr << "WARNING: RemotePluginServer::dispatchProcessEvents: unexpected opcode "
 		  << opcode << std::endl;
@@ -446,6 +442,10 @@ RemotePluginServer::dispatchControlEvents()
     }
 
     case RemotePluginNoOpcode:
+	break;
+
+    case RemotePluginReset:
+	reset();
 	break;
 
     default:
