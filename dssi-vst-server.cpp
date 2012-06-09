@@ -26,6 +26,8 @@
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
 
+#include <jack/jack.h>
+
 #define VST_FORCE_DEPRECATED 0
 #include "aeffectx.h"
 
@@ -66,8 +68,12 @@ static int sampleRate = 0;
 static bool guiVisible = false;
 static bool needIdle = false;
 
-static RemotePluginDebugLevel debugLevel = RemotePluginDebugSetup;
+static RemotePluginDebugLevel debugLevel = RemotePluginDebugNone;
 static pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
+
+static jack_client_t* jack_client = 0;
+static int jack_process_callback(jack_nframes_t, void*)
+{ return 0; }
 
 using namespace std;
 
@@ -691,6 +697,7 @@ RemoteVSTServer::terminateGUIProcess()
 }
 
 #if 1 // vestige header
+#define kVstTransportChanged 1
 #define kVstVersion 2400
 struct VstTimeInfo_R {
     double samplePos, sampleRate, nanoSeconds, ppqPos, tempo, barStartPos, cycleStartPos, cycleEndPos;
@@ -776,9 +783,46 @@ hostCallback(AEffect *plugin, long opcode, long index,
 //	if (debugLevel > 1)
 //	    cerr << "dssi-vst-server[2]: audioMasterGetTime requested" << endl;
         memset(&timeInfo, 0, sizeof(VstTimeInfo_R));
-	timeInfo.samplePos = currentSamplePosition;
-	timeInfo.sampleRate = sampleRate;
-	timeInfo.flags = 0; // don't mark anything valid except default samplePos/Rate
+        timeInfo.sampleRate = sampleRate;
+        timeInfo.samplePos  = currentSamplePosition;
+
+        if (jack_client)
+        {
+            static jack_position_t jack_pos;
+            static jack_transport_state_t jack_state;
+
+            jack_state = jack_transport_query(jack_client, &jack_pos);
+
+            timeInfo.flags |= kVstTransportChanged;
+
+            if (jack_state != JackTransportStopped)
+                timeInfo.flags |= kVstTransportPlaying;
+
+            if (jack_pos.unique_1 == jack_pos.unique_2)
+            {
+                timeInfo.sampleRate = jack_pos.frame_rate;
+                timeInfo.samplePos  = jack_pos.frame;
+
+                if (jack_pos.valid & JackPositionBBT)
+                {
+                    // Tempo
+                    timeInfo.tempo  = jack_pos.beats_per_minute;
+                    timeInfo.flags |= kVstTempoValid;
+
+                    // Time Signature
+                    timeInfo.timeSigNumerator   = jack_pos.beats_per_bar;
+                    timeInfo.timeSigDenominator = jack_pos.beat_type;
+                    timeInfo.flags |= kVstTimeSigValid;
+
+                    // Position
+                    double dPos = timeInfo.samplePos / timeInfo.sampleRate;
+                    timeInfo.barStartPos = 0;
+                    timeInfo.nanoSeconds = dPos * 1000.0;
+                    timeInfo.ppqPos = dPos * timeInfo.tempo / 60.0;
+                    timeInfo.flags |= kVstBarsValid|kVstNanosValid|kVstPpqPosValid;
+                }
+            }
+        }
 	rv = (intptr_t)&timeInfo;
 	break;
 
@@ -1434,6 +1478,15 @@ WinMain(HINSTANCE hInst, HINSTANCE hPrevInst, LPSTR cmdline, int cmdshow)
 	return 1;
     }
 
+    // create dummy jack client for transport info
+    jack_client = jack_client_open("dssi-vst", JackNoStartServer, 0);
+
+    if (jack_client)
+    {
+        jack_set_process_callback(jack_client, jack_process_callback, 0);
+        jack_activate(jack_client);
+    }
+
     HWND window;
     if ((window = CreateWindowExA
 	 (0, "dssi-vst", "dummy",
@@ -1499,6 +1552,12 @@ WinMain(HINSTANCE hInst, HINSTANCE hPrevInst, LPSTR cmdline, int cmdshow)
 
     if (debugLevel > 0) {
 	cerr << "dssi-vst-server[1]: cleaning up" << endl;
+    }
+
+    if (jack_client)
+    {
+        jack_deactivate(jack_client);
+        jack_client_close(jack_client);
     }
 
     CloseHandle(audioThreadHandle);

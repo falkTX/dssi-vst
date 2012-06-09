@@ -9,15 +9,15 @@ WINECXX ?= wineg++ -m32
 
 PREFIX  ?= /usr/local
 
-BIN_DIR    = $(PREFIX)/bin
-DSSI_DIR   = $(PREFIX)/lib/dssi
-LADSPA_DIR = $(PREFIX)/lib/ladspa
+BIN_DIR    = $(DESTDIR)$(PREFIX)/bin
+DSSI_DIR   = $(DESTDIR)$(PREFIX)/lib/dssi
+LADSPA_DIR = $(DESTDIR)$(PREFIX)/lib/ladspa
 
 BUILD_FLAGS  = -O2 -ffast-math -fvisibility=hidden -fPIC -mtune=generic -msse -Wall -Ivestige $(CXX_FLAGS)
 BUILD_FLAGS += $(shell pkg-config --cflags alsa liblo)
 LINK_FLAGS   = $(LDFLAGS)
 
-LINK_PLUGIN = -shared $(shell pkg-config --libs alsa) $(LINK_FLAGS)
+LINK_PLUGIN = -shared $(shell pkg-config --libs alsa jack) $(LINK_FLAGS)
 LINK_HOST   = $(shell pkg-config --libs alsa jack) $(LINK_FLAGS)
 LINK_GUI    = $(shell pkg-config --libs liblo) $(LINK_FLAGS)
 LINK_WINE   = -m32 -L/usr/lib32/wine -L/usr/lib/i386-linux-gnu/wine -lpthread $(LINK_FLAGS)
@@ -38,7 +38,7 @@ dssi-vst-scanner.exe: dssi-vst-scanner.wine.o libremoteplugin.wine.a
 	$(WINECXX) $^ $(LINK_WINE) -o $@
 
 dssi-vst-server.exe: dssi-vst-server.wine.o libremoteplugin.wine.a
-	$(WINECXX) $^ $(LINK_WINE) -o $@
+	$(WINECXX) $^ $(LINK_WINE) -ljack -o $@
 
 vsthost: remotevstclient.o vsthost.o libremoteplugin.unix.a
 	$(CXX) $^ $(LINK_HOST) -o $@
@@ -92,3 +92,15 @@ libremoteplugin.wine.a: paths.wine.o remotepluginclient.wine.o remotepluginserve
 
 clean:
 	rm -f *.a *.o *.exe *.so $(TARGETS)
+
+install:
+	install -d $(BIN_DIR)
+	install -d $(DSSI_DIR)
+	install -d $(DSSI_DIR)/dssi-vst
+	install -d $(LADSPA_DIR)
+	install -m 755 vsthost $(BIN_DIR)
+	install -m 755 dssi-vst.so $(DSSI_DIR)
+	install -m 755 dssi-vst_gui $(DSSI_DIR)/dssi-vst
+	install -m 755 dssi-vst-scanner.exe dssi-vst-scanner.exe.so $(DSSI_DIR)/dssi-vst
+	install -m 755 dssi-vst-server.exe dssi-vst-server.exe.so $(DSSI_DIR)/dssi-vst
+	install -m 755 dssi-vst.so $(LADSPA_DIR)
