@@ -15,7 +15,7 @@ LADSPA_DIR = $(DESTDIR)$(PREFIX)/lib/ladspa
 
 BUILD_FLAGS  = -O2 -ffast-math -fvisibility=hidden -fPIC -mtune=generic -msse -Wall -Ivestige $(CXX_FLAGS)
 BUILD_FLAGS += $(shell pkg-config --cflags alsa liblo)
-LINK_FLAGS   = $(LDFLAGS)
+LINK_FLAGS   = -lz $(LDFLAGS)
 
 LINK_PLUGIN = -shared $(shell pkg-config --libs alsa jack) $(LINK_FLAGS)
 LINK_HOST   = $(shell pkg-config --libs alsa jack) $(LINK_FLAGS)

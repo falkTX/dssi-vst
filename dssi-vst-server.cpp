@@ -114,6 +114,11 @@ public:
     virtual void         showGUI(std::string);
     virtual void         hideGUI();
 
+    //Deryabin Andrew: vst chunks support
+    virtual std::vector<char> getVSTChunk();
+    virtual bool setVSTChunk(std::vector<char>);
+    //Deryabin Andrew: vst chunks support: end code
+
     virtual void process(float **inputs, float **outputs);
 
     virtual void setDebugLevel(RemotePluginDebugLevel level) {
@@ -590,6 +595,39 @@ RemoteVSTServer::hideGUI()
     m_plugin->dispatcher(m_plugin, effEditClose, 0, 0, 0, 0);
     guiVisible = false;
 }
+
+//Deryabin Andrew: vst chunks support
+std::vector<char> RemoteVSTServer::getVSTChunk()
+{
+    cerr << "dssi-vst-server: Getting vst chunk from plugin.." << endl;
+    char * chunkraw = 0;
+    int len = m_plugin->dispatcher(m_plugin, 23, 0, 0, (void **)&chunkraw, 0);
+    std::vector<char> chunk;
+    for(int i = 0; i < len; i++)
+    {
+        chunk.push_back(chunkraw [i]);
+    }
+
+    if (len > 0)
+    {
+        cerr << "Got " << len << " bytes chunk." << endl;
+    }
+
+    return chunk;
+}
+
+bool RemoteVSTServer::setVSTChunk(std::vector<char> chunk)
+{
+    cerr << "dssi-vst-server: Sending vst chunk to plugin. Size=" << chunk.size() << endl;
+    std::vector<char>::pointer ptr = &chunk [0];
+
+    pthread_mutex_lock(&mutex);
+    m_plugin->dispatcher(m_plugin, 24, 0, chunk.size(), (void *)ptr, 0);
+    pthread_mutex_unlock(&mutex);
+
+    return true;
+}
+//Deryabin Andrew: vst chunks support: end code
 
 void
 RemoteVSTServer::startEdit()

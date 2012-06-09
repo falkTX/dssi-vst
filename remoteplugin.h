@@ -54,6 +54,11 @@ enum RemotePluginOpcode {
     RemotePluginShowGUI = 700,
     RemotePluginHideGUI,
 
+//Deryabin Andrew: vst chunks support
+    RemotePluginGetVSTChunk = 800,
+    RemotePluginSetVSTChunk,
+//Deryabin Andrew: vst chunks support: end code
+
     RemotePluginNoOpcode = 9999
 
 };

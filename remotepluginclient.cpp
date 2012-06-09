@@ -492,4 +492,21 @@ RemotePluginClient::hideGUI()
     writeOpcode(m_controlRequestFd, RemotePluginHideGUI);
 }
 
+//Deryabin Andrew: vst chunks support
+std::vector<char> RemotePluginClient::getVSTChunk()
+{
+    std::cerr << "RemotePluginClient::getChunk: getting vst chunk.." << std::endl;
+    writeOpcode(m_controlRequestFd, RemotePluginGetVSTChunk);
+    std::vector<char> chunk = readRaw(m_controlResponseFd);
+    std::cerr << "RemotePluginClient::getChunk: got vst chunk, size=" << chunk.size() << std::endl;
+    return chunk;
+}
 
+void RemotePluginClient::setVSTChunk(std::vector<char> chunk)
+{
+    std::cerr << "RemotePluginClient::setChunk: writing vst chunk.." << std::endl;
+    std::cerr << "RemotePluginClient::setChunk: read vst chunk, size=" << chunk.size() << std::endl;
+    writeOpcode(m_controlRequestFd, RemotePluginSetVSTChunk);
+    writeRaw(m_controlRequestFd, chunk);
+}
+//Deryabin Andrew: vst chunks support: end code

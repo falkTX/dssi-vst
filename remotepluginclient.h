@@ -62,6 +62,11 @@ public:
     void         showGUI(std::string guiData);
     void         hideGUI();
 
+    //Deryabin Andrew: vst chunks support
+    std::vector<char> getVSTChunk();
+    void              setVSTChunk(std::vector<char> chunk);
+    //Deryabin Andrew: vst chunks support: end code
+
 protected:
     RemotePluginClient();
 

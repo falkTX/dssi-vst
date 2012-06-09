@@ -79,6 +79,11 @@ protected:
 
     RemotePluginClient        *m_plugin;
     bool                       m_ok;
+
+    //Andrew Deryabin: VST chunks support
+    char *m_chunkdata;
+    friend class DSSIVSTPlugin;
+    //Andrew Deryabin: VST chunks support: end code
 };
 
 class DSSIVSTPlugin
@@ -121,6 +126,9 @@ public:
     static char *configure(LADSPA_Handle instance, const char *key,
 			   const char *value);
 
+    static int set_custom_data(LADSPA_Handle Instance, void *Data, unsigned long DataLength);
+    static int get_custom_data(LADSPA_Handle Instance, void **Data, unsigned long *DataLength);
+
 private:
     typedef std::pair<std::string, DSSI_Descriptor *> PluginPair;
     typedef std::vector<PluginPair> PluginList;
@@ -146,7 +154,8 @@ DSSIVSTPluginInstance::DSSIVSTPluginInstance(std::string dllName,
     m_alsaDecoder(0),
     m_pendingProgram(false),
     m_plugin(0),
-    m_ok(false)
+    m_ok(false),
+    m_chunkdata(0)
 {
     std::cerr << "DSSIVSTPluginInstance::DSSIVSTPluginInstance(" << dllName << ")" << std::endl;
 
@@ -227,6 +236,8 @@ DSSIVSTPluginInstance::~DSSIVSTPluginInstance()
     }
 
     delete m_plugin;
+
+    delete m_chunkdata;
 
     if (m_alsaDecoder) {
 	snd_midi_event_free(m_alsaDecoder);
@@ -576,6 +587,11 @@ DSSIVSTPlugin::DSSIVSTPlugin()
 	descriptor->select_program = DSSIVSTPlugin::select_program;
 	descriptor->get_midi_controller_for_port = 0;
 
+       //Andrew Deryabin: VST chunks support
+       descriptor->set_custom_data = DSSIVSTPlugin::set_custom_data;
+       descriptor->get_custom_data = DSSIVSTPlugin::get_custom_data;
+       //Andrew Deryabin: VST chunks support: end code
+
 	if (rec.isSynth) {
 	    descriptor->run_synth = DSSIVSTPlugin::run_synth;
 	} else {
@@ -746,3 +762,35 @@ dssi_descriptor(unsigned long index)
     return _plugin->queryDescriptor(index);
 }
 
+//Andrew Deryabin: VST chunks support
+int DSSIVSTPlugin::set_custom_data(LADSPA_Handle Instance, void *Data, unsigned long  DataLength)
+{
+    DSSIVSTPluginInstance *instance = ((DSSIVSTPluginInstance *)Instance);
+    if(DataLength == 0 || Data == 0)
+        return 0;
+    std::vector<char> chunk;
+    for(unsigned long i = 0; i < DataLength; i++)
+        chunk.push_back(((char *)Data) [i]);
+    instance->m_plugin->setVSTChunk(chunk);
+    return 1;
+}
+
+int DSSIVSTPlugin::get_custom_data(LADSPA_Handle Instance, void **Data, unsigned long  *DataLength)
+{
+    DSSIVSTPluginInstance *instance = ((DSSIVSTPluginInstance *)Instance);
+    std::vector<char> chunk = instance->m_plugin->getVSTChunk();
+    unsigned long chunksize = chunk.size();
+    instance->m_chunkdata = new char [chunksize];
+    if(instance->m_chunkdata)
+    {
+        std::vector<char>::pointer ptr = &chunk [0];
+        memcpy(instance->m_chunkdata, ptr, chunksize);
+        *Data = instance->m_chunkdata;
+        *DataLength = chunksize;
+        return 1;
+    }
+    *Data = 0;
+    *DataLength = 0;
+    return 0;
+}
+//Andrew Deryabin: VST chunks support: end code

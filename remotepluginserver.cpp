@@ -445,6 +445,22 @@ RemotePluginServer::dispatchControlEvents()
 	break;
     }
 
+    //Deryabin Andrew: vst chunks support
+    case RemotePluginGetVSTChunk:
+    {
+        std::vector<char> chunk = getVSTChunk();
+        writeRaw(m_controlResponseFd, chunk);
+        break;
+    }
+
+    case RemotePluginSetVSTChunk:
+    {
+        std::vector<char> chunk = readRaw(m_controlRequestFd);
+        setVSTChunk(chunk);
+        break;
+    }
+    //Deryabin Andrew: vst chunks support: end code
+
     case RemotePluginNoOpcode:
 	break;
 

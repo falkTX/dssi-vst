@@ -11,6 +11,7 @@
 
 #include <errno.h>
 #include <unistd.h>
+#include <zlib.h>
 #include <cstdio>
 
 //#define DEBUG_RDWR 1
@@ -158,4 +159,80 @@ rdwr_readMIDIData(int fd, int **frameoffsets, int &events, const char *file, int
     return buf;
 }
 
+//Deryabin Andrew: vst chunks support
+extern void
+rdwr_writeRaw(int fd, std::vector<char> rawdata, const char *file, int line)
+{
+    unsigned long complen = compressBound(rawdata.size());
+    char *compressed = new char [complen];
+    if(!compressed)
+    {
+        fprintf(stderr, "Failed to allocate %lu bytes of memory at %s:%d\n", complen, file, line);
+        throw RemotePluginClosedException();
+    }
 
+    std::vector<char>::pointer ptr = &rawdata [0];
+
+    if(compress2((Bytef *)compressed, &complen, (Bytef *)ptr, rawdata.size(), 9) != Z_OK)
+    {
+        delete compressed;
+        fprintf(stderr, "Failed to compress source buffer at %s:%d\n", file, line);
+        throw RemotePluginClosedException();
+    }
+
+    fprintf(stderr, "compressed source buffer. size=%lu bytes\n", complen);
+
+    int len = complen;
+    rdwr_tryWrite(fd, &len, sizeof(int), file, line);
+    len = rawdata.size();
+    rdwr_tryWrite(fd, &len, sizeof(int), file, line);    
+    rdwr_tryWrite(fd, compressed, complen, file, line);
+
+    delete [] compressed;
+}
+
+extern std::vector<char>
+rdwr_readRaw(int fd, const char *file, int line)
+{
+    int complen, len;
+    static char *rawbuf = 0;
+    static int bufLen = 0;
+    rdwr_tryRead(fd, &complen, sizeof(int), file, line);
+    rdwr_tryRead(fd, &len, sizeof(int), file, line);
+    if (complen > bufLen) {
+    delete rawbuf;
+    rawbuf = new char[complen];
+    bufLen = complen;
+    }
+    rdwr_tryRead(fd, rawbuf, complen, file, line);
+
+    char *uncompressed = new char [len];
+
+    if(!uncompressed)
+    {
+        fprintf(stderr, "Failed to allocate %d bytes of memory at %s:%d\n", len, file, line);
+        throw RemotePluginClosedException();
+    }
+
+    unsigned long destlen = len;
+
+    if(uncompress((Bytef *)uncompressed, &destlen, (Bytef *)rawbuf, complen) != Z_OK)
+    {
+        delete uncompressed;
+        fprintf(stderr, "Failed to uncompress source buffer at %s:%d\n", file, line);
+        throw RemotePluginClosedException();   
+    }
+
+    fprintf(stderr, "uncompressed source buffer. size=%lu bytes, complen=%d\n", destlen, complen);
+
+    std::vector<char> rawout;
+    for(unsigned long i = 0; i < destlen; i++)
+    {
+        rawout.push_back(uncompressed [i]);
+    }
+
+    delete uncompressed;
+
+    return rawout;
+}
+//Deryabin Andrew: vst chunks support: end code

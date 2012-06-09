@@ -8,6 +8,7 @@
 #ifndef _RD_WR_OPS_H_
 
 #include <string>
+#include <vector>
 #include "remoteplugin.h"
 
 extern void rdwr_tryRead(int fd, void *buf, size_t count, const char *file, int line);
@@ -21,6 +22,11 @@ extern void rdwr_writeFloat(int fd, float f, const char *file, int line);
 extern float rdwr_readFloat(int fd, const char *file, int line);
 extern unsigned char *rdwr_readMIDIData(int fd, int **frameoffsets, int &events, const char *file, int line);
 
+//Deryabin Andrew: vst chunks support
+extern void rdwr_writeRaw(int fd, std::vector<char>, const char *file, int line);
+extern std::vector<char> rdwr_readRaw(int fd, const char *file, int line);
+//Deryabin Andrew: vst chunks support: end code
+
 #define tryRead(a, b, c) rdwr_tryRead(a, b, c, __FILE__, __LINE__)
 #define tryWrite(a, b, c) rdwr_tryWrite(a, b, c, __FILE__, __LINE__)
 #define writeOpcode(a, b) rdwr_writeOpcode(a, b, __FILE__, __LINE__)
@@ -31,5 +37,10 @@ extern unsigned char *rdwr_readMIDIData(int fd, int **frameoffsets, int &events,
 #define writeFloat(a, b) rdwr_writeFloat(a, b, __FILE__, __LINE__)
 #define readFloat(a) rdwr_readFloat(a, __FILE__, __LINE__)
 #define readMIDIData(a, b, c) rdwr_readMIDIData(a, b, c, __FILE__, __LINE__)
+
+//Deryabin Andrew: chunks support
+#define writeRaw(a, b) rdwr_writeRaw(a, b, __FILE__, __LINE__)
+#define readRaw(a) rdwr_readRaw(a, __FILE__, __LINE__)
+//Deryabin Andrew: vst chunks support: end code
 
 #endif
