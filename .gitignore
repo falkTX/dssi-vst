@@ -1,0 +1,9 @@
+*.a
+*.o
+*.exe
+*.so
+
+.directory
+
+dssi-vst_gui
+vsthost
