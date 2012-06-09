@@ -22,6 +22,7 @@
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
 
+#define VST_FORCE_DEPRECATED 0
 #include "aeffectx.h"
 
 #include "remotepluginserver.h"
@@ -40,33 +41,54 @@
 using namespace std;
 
 
-#if VST_2_4_EXTENSIONS
+#if 1 // vestige header
+#define kVstVersion 2400
+struct VstTimeInfo_R {
+    double samplePos, sampleRate, nanoSeconds, ppqPos, tempo, barStartPos, cycleStartPos, cycleEndPos;
+    int32_t timeSigNumerator, timeSigDenominator, smpteOffset, smpteFrameRate, samplesToNextClock, flags;
+};
+intptr_t
+hostCallback(AEffect *plugin, int32_t opcode, int32_t index,
+             intptr_t value, void *ptr, float opt)
+#elif VST_2_4_EXTENSIONS
+typedef VstTimeInfo VstTimeInfo_R;
 VstIntPtr VSTCALLBACK
 hostCallback(AEffect *plugin, VstInt32 opcode, VstInt32 index,
 	     VstIntPtr value, void *ptr, float opt)
 #else
+typedef VstTimeInfo VstTimeInfo_R;
 long VSTCALLBACK
 hostCallback(AEffect *plugin, long opcode, long index,
 	     long value, void *ptr, float opt)
 #endif
 {
-    static VstTimeInfo timeInfo;
+    static VstTimeInfo_R timeInfo;
 
     switch (opcode) {
 
+    case audioMasterAutomate:
+        if (plugin)
+            plugin->setParameter(plugin, index, opt);
+        break;
+
     case audioMasterVersion:
-	return 2300;
+	return kVstVersion;
+
+    case audioMasterIdle:
+        if (plugin)
+            plugin->dispatcher(plugin, effEditIdle, 0, 0, 0, 0.0f);
+        break;
 
     case audioMasterGetVendorString:
 	strcpy((char *)ptr, "Chris Cannam");
 	break;
 
     case audioMasterGetProductString:
-	strcpy((char *)ptr, "DSSI VST Wrapper Plugin Scanner");
+	strcpy((char *)ptr, "DSSI-VST Scanner");
 	break;
 
     case audioMasterGetVendorVersion:
-	return long(RemotePluginVersion * 100);
+	return intptr_t(RemotePluginVersion * 100);
 
     case audioMasterGetLanguage:
 	return kVstLangEnglish;
@@ -76,29 +98,30 @@ hostCallback(AEffect *plugin, long opcode, long index,
 	    !strcmp((char*)ptr, "sendVstMidiEvent") ||
 	    !strcmp((char*)ptr, "sendVstTimeInfo") ||
 	    !strcmp((char*)ptr, "sizeWindow") ||
-	    !strcmp((char*)ptr, "supplyIdle")) {
+	    !strcmp((char*)ptr, "supplyIdle") ||
+            !strcmp((char*)ptr, "receiveVstEvents") ||
+            !strcmp((char*)ptr, "receiveVstMidiEvent")) {
 	    return 1;
 	}
 	break;
 
     case audioMasterGetTime:
+        memset(&timeInfo, 0, sizeof(VstTimeInfo_R));
 	timeInfo.samplePos = 0;
 	timeInfo.sampleRate = 48000;
 	timeInfo.flags = 0; // don't mark anything valid except default samplePos/Rate
-	return (long)&timeInfo;
+	return (intptr_t)&timeInfo;
 
     case DEPRECATED_VST_SYMBOL(audioMasterTempoAt):
 	// can't support this, return 120bpm
 	return 120 * 10000;
 
     case audioMasterGetSampleRate:
-	plugin->dispatcher(plugin, effSetSampleRate,
-			   0, 0, NULL, 48000.0);
+	return 48000; // fake value
 	break;
 
     case audioMasterGetBlockSize:
-	plugin->dispatcher(plugin, effSetBlockSize,
-			   0, 1024, NULL, 0);
+	return 1024; // fake value
 	break;
 
     case DEPRECATED_VST_SYMBOL(audioMasterWillReplaceOrAccumulate):
@@ -119,9 +142,9 @@ hostCallback(AEffect *plugin, long opcode, long index,
 	return 1;
 
     default:
-	;
+	break;
     }
-    
+
     return 0;
 };
 
@@ -411,5 +434,3 @@ WinMain(HINSTANCE hInst, HINSTANCE hPrevInst, LPSTR cmdline, int cmdshow)
     
     return 0;
 }
-
-    

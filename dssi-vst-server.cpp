@@ -26,6 +26,7 @@
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
 
+#define VST_FORCE_DEPRECATED 0
 #include "aeffectx.h"
 
 #include "remotepluginserver.h"
@@ -42,6 +43,8 @@
 #else
 #define DEPRECATED_VST_SYMBOL(x) x
 #endif
+
+#define effGetProgramNameIndexed 29
 
 struct Rect {
     short top;
@@ -353,7 +356,8 @@ RemoteVSTServer::setParameter(int p, float v)
 
     pthread_mutex_lock(&mutex);
     
-    cerr << "RemoteVSTServer::setParameter (" << p << "," << v << "): " << m_guiEventsExpected << " events expected" << endl;
+    if (debugLevel > 1)
+        cerr << "RemoteVSTServer::setParameter (" << p << "," << v << "): " << m_guiEventsExpected << " events expected" << endl;
     
     if (m_guiFifoFd < 0) {
 	m_guiEventsExpected = 0;
@@ -686,17 +690,28 @@ RemoteVSTServer::terminateGUIProcess()
     }
 }
 
-#if VST_2_4_EXTENSIONS
+#if 1 // vestige header
+#define kVstVersion 2400
+struct VstTimeInfo_R {
+    double samplePos, sampleRate, nanoSeconds, ppqPos, tempo, barStartPos, cycleStartPos, cycleEndPos;
+    int32_t timeSigNumerator, timeSigDenominator, smpteOffset, smpteFrameRate, samplesToNextClock, flags;
+};
+intptr_t
+hostCallback(AEffect *plugin, int32_t opcode, int32_t index,
+             intptr_t value, void *ptr, float opt)
+#elif VST_2_4_EXTENSIONS
+typedef VstTimeInfo VstTimeInfo_R;
 VstIntPtr VSTCALLBACK
 hostCallback(AEffect *plugin, VstInt32 opcode, VstInt32 index,
 	     VstIntPtr value, void *ptr, float opt)
 #else
+typedef VstTimeInfo VstTimeInfo_R;
 long VSTCALLBACK
 hostCallback(AEffect *plugin, long opcode, long index,
 	     long value, void *ptr, float opt)
 #endif
 {
-    static VstTimeInfo timeInfo;
+    static VstTimeInfo_R timeInfo;
     int rv = 0;
 
     switch (opcode) {
@@ -728,7 +743,7 @@ hostCallback(AEffect *plugin, long opcode, long index,
     case audioMasterVersion:
 	if (debugLevel > 1)
 	    cerr << "dssi-vst-server[2]: audioMasterVersion requested" << endl;
-	rv = 2300;
+	rv = kVstVersion;
 	break;
 
     case audioMasterCurrentId:
@@ -740,7 +755,8 @@ hostCallback(AEffect *plugin, long opcode, long index,
     case audioMasterIdle:
 	if (debugLevel > 1)
 	    cerr << "dssi-vst-server[2]: audioMasterIdle requested" << endl;
-	plugin->dispatcher(plugin, effEditIdle, 0, 0, 0, 0);
+	if (plugin)
+            plugin->dispatcher(plugin, effEditIdle, 0, 0, 0, 0);
 	break;
 
     case DEPRECATED_VST_SYMBOL(audioMasterPinConnected):
@@ -759,10 +775,11 @@ hostCallback(AEffect *plugin, long opcode, long index,
     case audioMasterGetTime:
 //	if (debugLevel > 1)
 //	    cerr << "dssi-vst-server[2]: audioMasterGetTime requested" << endl;
+        memset(&timeInfo, 0, sizeof(VstTimeInfo_R));
 	timeInfo.samplePos = currentSamplePosition;
 	timeInfo.sampleRate = sampleRate;
 	timeInfo.flags = 0; // don't mark anything valid except default samplePos/Rate
-	rv = (long)&timeInfo;
+	rv = (intptr_t)&timeInfo;
 	break;
 
     case audioMasterProcessEvents:
@@ -830,6 +847,7 @@ hostCallback(AEffect *plugin, long opcode, long index,
 	}
 	plugin->dispatcher(plugin, effSetSampleRate,
 			   0, 0, NULL, (float)sampleRate);
+        rv = sampleRate;
 	break;
 
     case audioMasterGetBlockSize:
@@ -840,6 +858,7 @@ hostCallback(AEffect *plugin, long opcode, long index,
 	}
 	plugin->dispatcher(plugin, effSetBlockSize,
 			   0, bufferSize, NULL, 0);
+        rv = bufferSize;
 	break;
 
     case audioMasterGetInputLatency:
@@ -930,7 +949,7 @@ hostCallback(AEffect *plugin, long opcode, long index,
     case audioMasterGetProductString:
 	if (debugLevel > 1)
 	    cerr << "dssi-vst-server[2]: audioMasterGetProductString requested" << endl;
-	strcpy((char *)ptr, "DSSI VST Wrapper Plugin");
+	strcpy((char *)ptr, "DSSI-VST Plugin");
 	break;
 
     case audioMasterGetVendorVersion:
@@ -953,11 +972,13 @@ hostCallback(AEffect *plugin, long opcode, long index,
 	if (debugLevel > 1)
 	    cerr << "dssi-vst-server[2]: audioMasterCanDo(" << (char *)ptr
 		 << ") requested" << endl;
-	if (!strcmp((char*)ptr, "sendVstEvents") ||
-	    !strcmp((char*)ptr, "sendVstMidiEvent") ||
-	    !strcmp((char*)ptr, "sendVstTimeInfo") ||
-	    !strcmp((char*)ptr, "sizeWindow") /* ||
-	    !strcmp((char*)ptr, "supplyIdle") */) {
+        if (!strcmp((char*)ptr, "sendVstEvents") ||
+            !strcmp((char*)ptr, "sendVstMidiEvent") ||
+            !strcmp((char*)ptr, "sendVstTimeInfo") ||
+            !strcmp((char*)ptr, "sizeWindow") ||
+            !strcmp((char*)ptr, "supplyIdle") ||
+            !strcmp((char*)ptr, "receiveVstEvents") ||
+            !strcmp((char*)ptr, "receiveVstMidiEvent")) {
 	    rv = 1;
 	}
 	break;
@@ -986,8 +1007,8 @@ hostCallback(AEffect *plugin, long opcode, long index,
     case audioMasterUpdateDisplay:
 	if (debugLevel > 1)
 	    cerr << "dssi-vst-server[2]: audioMasterUpdateDisplay requested" << endl;
-	plugin->dispatcher(plugin, effEditIdle,
-			   0, 0, NULL, 0);
+	if (plugin)
+            plugin->dispatcher(plugin, effEditIdle, 0, 0, NULL, 0);
 	break;
 
     case audioMasterBeginEdit:
