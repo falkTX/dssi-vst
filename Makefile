@@ -100,7 +100,7 @@ install:
 	install -d $(LADSPA_DIR)
 	install -m 755 vsthost $(BIN_DIR)
 	install -m 755 dssi-vst.so $(DSSI_DIR)
+	install -m 755 dssi-vst.so $(LADSPA_DIR)
 	install -m 755 dssi-vst_gui $(DSSI_DIR)/dssi-vst
 	install -m 755 dssi-vst-scanner.exe dssi-vst-scanner.exe.so $(DSSI_DIR)/dssi-vst
 	install -m 755 dssi-vst-server.exe dssi-vst-server.exe.so $(DSSI_DIR)/dssi-vst
-	install -m 755 dssi-vst.so $(LADSPA_DIR)
