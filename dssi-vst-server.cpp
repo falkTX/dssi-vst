@@ -1228,10 +1228,10 @@ LRESULT WINAPI
 MainProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 {
     switch (msg) {
-    case WM_DESTROY:
+    case WM_CLOSE:
 	remoteVSTServerInstance->terminateGUIProcess();
-	guiVisible = false;
-	return 0;
+        remoteVSTServerInstance->hideGUI();
+        return TRUE;
     }
 
     return DefWindowProc(hWnd, msg, wParam, lParam);
