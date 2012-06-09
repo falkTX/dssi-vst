@@ -718,6 +718,7 @@ _makeLADSPADescriptorMap()
     }
 }
 
+extern "C" __attribute__ ((visibility("default")))
 const LADSPA_Descriptor *
 ladspa_descriptor(unsigned long index)
 {
@@ -734,6 +735,7 @@ ladspa_descriptor(unsigned long index)
     return 0;
 }
 
+extern "C" __attribute__ ((visibility("default")))
 const DSSI_Descriptor *
 dssi_descriptor(unsigned long index)
 {

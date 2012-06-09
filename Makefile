@@ -1,78 +1,95 @@
+#!/usr/bin/make -f
+# Makefile for dssi-vst #
+# ------------------------------- #
+# Created by falkTX
+#
 
-DSSIDIR		= /usr/local/lib/dssi
-LADSPADIR	= /usr/local/lib/ladspa
-BINDIR		= /usr/local/bin
+CXX     ?= g++
+WINECXX ?= wineg++ -m32
 
-# To compile with the VeSTige compatibility header:
-CXXFLAGS	= -Ivestige -Wall -fPIC
+PREFIX  ?= /usr/local
 
-# To compile with the official VST SDK v2.4r2:
-#CXXFLAGS	= -I./vstsdk2.4/pluginterfaces/vst2.x -Wall -fPIC
+BIN_DIR    = $(PREFIX)/bin
+DSSI_DIR   = $(PREFIX)/lib/dssi
+LADSPA_DIR = $(PREFIX)/lib/ladspa
 
-LDFLAGS		= 
+BUILD_FLAGS  = -O2 -ffast-math -fomit-frame-pointer -fvisibility=hidden -fPIC -mtune=generic -msse -Wall -Ivestige $(CXX_FLAGS)
+# BUILD_FLAGS  = -O0 -g -fPIC -Wall -Ivestige $(CXX_FLAGS)
+BUILD_FLAGS += $(shell pkg-config --cflags alsa liblo)
+LINK_FLAGS   = $(LDFLAGS)
 
-TARGETS		= dssi-vst-server.exe.so \
-		  dssi-vst-scanner.exe.so \
-		  dssi-vst.so \
-		  dssi-vst_gui \
-		  vsthost
+LINK_PLUGIN = -shared $(shell pkg-config --libs alsa) $(LINK_FLAGS)
+LINK_HOST   = $(shell pkg-config --libs alsa jack) $(LINK_FLAGS)
+LINK_GUI    = $(shell pkg-config --libs liblo) $(LINK_FLAGS)
+LINK_WINE   = -m32 -L/usr/lib32/wine -L/usr/lib/i386-linux-gnu/wine -lpthread $(LINK_FLAGS)
 
-HEADERS		= remoteplugin.h \
-		  remotepluginclient.h \
-		  remotepluginserver.h \
-		  remotevstclient.h \
-		  rdwrops.h \
-		  paths.h
+TARGETS     = dssi-vst.so dssi-vst_gui vsthost dssi-vst-scanner.exe dssi-vst-server.exe
 
-OBJECTS		= remotevstclient.o \
-		  remotepluginclient.o \
-		  remotepluginserver.o \
-		  rdwrops.o \
-		  paths.o
+# --------------------------------------------------------------
 
-OBJECTS_W32	= remotepluginclient.w32.o \
-		  remotepluginserver.w32.o \
-		  rdwrops.w32.o \
-		  paths.w32.o
+all: $(TARGETS)
 
-all:		$(TARGETS)
+dssi-vst.so: dssi-vst.o remotevstclient.o libremoteplugin.unix.a
+	$(CXX) $^ $(LINK_PLUGIN) -o $@
 
-install:	all
-		mkdir -p $(DSSIDIR)/dssi-vst
-		mkdir -p $(LADSPADIR)
-		mkdir -p $(BINDIR)
-		install dssi-vst.so $(DSSIDIR)
-		install dssi-vst.so $(LADSPADIR)
-		install dssi-vst-server.exe.so dssi-vst-server dssi-vst-scanner.exe.so dssi-vst-scanner dssi-vst_gui $(DSSIDIR)/dssi-vst
-		install vsthost $(BINDIR)
+dssi-vst_gui: dssi-vst_gui.o rdwrops.o
+	$(CXX) $^ $(LINK_GUI) -o $@
+
+dssi-vst-scanner.exe: dssi-vst-scanner.wine.o libremoteplugin.wine.a
+	$(WINECXX) $^ $(LINK_WINE) -o $@
+
+dssi-vst-server.exe: dssi-vst-server.wine.o libremoteplugin.wine.a
+	$(WINECXX) $^ $(LINK_WINE) -o $@
+
+vsthost: remotevstclient.o vsthost.o libremoteplugin.unix.a
+	$(CXX) $^ $(LINK_HOST) -o $@
+
+# --------------------------------------------------------------
+
+paths.unix.o:
+	$(CXX) paths.cpp $(BUILD_FLAGS) -c -o $@
+
+remotepluginclient.unix.o:
+	$(CXX) remotepluginclient.cpp $(BUILD_FLAGS) -c -o $@
+
+remotepluginserver.unix.o:
+	$(CXX) remotepluginserver.cpp $(BUILD_FLAGS) -c -o $@
+
+rdwrops.unix.o:
+	$(CXX) rdwrops.cpp $(BUILD_FLAGS) -c -o $@
+
+libremoteplugin.unix.a: paths.unix.o remotepluginclient.unix.o remotepluginserver.unix.o rdwrops.unix.o
+	ar rs $@ $^
+
+# --------------------------------------------------------------
+
+paths.wine.o:
+	$(WINECXX) paths.cpp $(BUILD_FLAGS) -c -o $@
+
+remotepluginclient.wine.o:
+	$(WINECXX) remotepluginclient.cpp $(BUILD_FLAGS) -c -o $@
+
+remotepluginserver.wine.o:
+	$(WINECXX) remotepluginserver.cpp $(BUILD_FLAGS) -c -o $@
+
+rdwrops.wine.o:
+	$(WINECXX) rdwrops.cpp $(BUILD_FLAGS) -c -o $@
+
+dssi-vst-scanner.wine.o:
+	$(WINECXX) dssi-vst-scanner.cpp $(BUILD_FLAGS) -c -o $@
+
+dssi-vst-server.wine.o:
+	$(WINECXX) dssi-vst-server.cpp $(BUILD_FLAGS) -c -o $@
+
+libremoteplugin.wine.a: paths.wine.o remotepluginclient.wine.o remotepluginserver.wine.o rdwrops.wine.o
+	ar rs $@ $^
+
+# --------------------------------------------------------------
+
+.cpp.o:
+	$(CXX) $< $(BUILD_FLAGS) -c -o $@
+
+# --------------------------------------------------------------
 
 clean:
-		rm -f $(OBJECTS) $(OBJECTS_W32) libremoteplugin.a libremoteplugin.w32.a
-
-distclean:	clean
-		rm -f $(TARGETS) dssi-vst-scanner dssi-vst-server *~ *.bak
-
-%.exe.so:	%.cpp libremoteplugin.w32.a $(HEADERS)
-		wineg++ -m32 $(CXXFLAGS) $< -o $* $(LDFLAGS) -L. -lremoteplugin.w32 -lpthread
-
-libremoteplugin.a:	remotepluginclient.o remotepluginserver.o rdwrops.o paths.o
-		ar r $@ $^
-
-libremoteplugin.w32.a:	remotepluginclient.w32.o remotepluginserver.w32.o rdwrops.w32.o paths.w32.o
-		ar r $@ $^
-
-%.w32.o:	%.cpp $(HEADERS)
-		wineg++ -m32 $(CXXFLAGS) $< -c -o $@
-
-%.o:		%.cpp $(HEADERS)
-		g++ $(CXXFLAGS) $< -c
-
-dssi-vst.so:	dssi-vst.cpp libremoteplugin.a remotevstclient.o $(HEADERS)
-		g++ -shared -Wl,-Bsymbolic -g3 $(CXXFLAGS) -o dssi-vst.so dssi-vst.cpp remotevstclient.o $(LDFLAGS) -L. -lremoteplugin -lasound
-
-vsthost:	vsthost.cpp libremoteplugin.a remotevstclient.o $(HEADERS)
-		g++ $(CXXFLAGS) vsthost.cpp remotevstclient.o -o vsthost $(LDFLAGS) -L. -lremoteplugin -ljack -lasound -lpthread
-
-dssi-vst_gui:	dssi-vst_gui.cpp rdwrops.h
-		g++ $(CXXFLAGS) dssi-vst_gui.cpp rdwrops.o -o dssi-vst_gui $(LDFLAGS) -llo
-
+	rm -f *.a *.o *.exe *.so $(TARGETS)
