@@ -8,8 +8,8 @@
 
 #include "remotevstclient.h"
 
-#include <ladspa.h>
-#include <dssi.h>
+#include "dssi/ladspa.h"
+#include "dssi/dssi.h"
 #include <alsa/seq_event.h>
 #include <alsa/seq_midi_event.h>
 #include <dirent.h>
