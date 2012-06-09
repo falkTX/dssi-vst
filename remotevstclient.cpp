@@ -55,7 +55,7 @@ RemoteVSTClient::RemoteVSTClient(std::string dllName, bool showGUI) :
 	closedir(directory);
 
 	struct stat st;
-	std::string fileName = subDir + "/dssi-vst-server";
+	std::string fileName = subDir + "/dssi-vst-server.exe";
 
 	if (stat(fileName.c_str(), &st)) {
 	    continue;
@@ -89,7 +89,7 @@ RemoteVSTClient::RemoteVSTClient(std::string dllName, bool showGUI) :
 
     if (!found) {
 	cleanup();
-	throw((std::string)"Failed to find dssi-vst-server executable");
+	throw((std::string)"Failed to find dssi-vst-server.exe");
     } else {
 	syncStartup();
     }
@@ -318,7 +318,7 @@ RemoteVSTClient::queryPlugins(std::vector<PluginRecord> &plugins)
 	closedir(directory);
 
 	struct stat st;
-	std::string fileName = subDir + "/dssi-vst-scanner";
+	std::string fileName = subDir + "/dssi-vst-scanner.exe";
 
 	if (stat(fileName.c_str(), &st)) {
 	    continue;
@@ -353,7 +353,7 @@ RemoteVSTClient::queryPlugins(std::vector<PluginRecord> &plugins)
 
     if (!found) {
 	unlink(fifoFile);
-	throw((std::string)"Failed to find dssi-vst-scanner executable");
+	throw((std::string)"Failed to find dssi-vst-scanner.exe");
     }
 
     struct pollfd pfd;
