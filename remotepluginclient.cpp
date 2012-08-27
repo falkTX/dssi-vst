@@ -272,7 +272,7 @@ RemotePluginClient::setBufferSize(int s)
     if (s == m_bufferSize) return;
     m_bufferSize = s;
     sizeShm();
-    writeOpcode(m_processFd, RemotePluginSetBufferSize);
+    writeOpcode(m_controlRequestFd, RemotePluginReset);
     writeInt(m_processFd, s);
 }
 
