@@ -6,6 +6,7 @@
 */
 
 #ifndef _RD_WR_OPS_H_
+#define _RD_WR_OPS_H_
 
 #include <string>
 #include <vector>
