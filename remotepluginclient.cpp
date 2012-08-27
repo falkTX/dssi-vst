@@ -417,8 +417,8 @@ RemotePluginClient::sendMIDIData(unsigned char *data, int *frameoffsets, int eve
 void
 RemotePluginClient::process(float **inputs, float **outputs)
 {
-    struct timeval start, finish;
-    gettimeofday(&start, 0);
+    //struct timeval start, finish;
+    //gettimeofday(&start, 0);
 
     if (m_bufferSize < 0) {
 	std::cerr << "ERROR: RemotePluginClient::setBufferSize must be called before RemotePluginClient::process" << std::endl;
@@ -455,7 +455,7 @@ RemotePluginClient::process(float **inputs, float **outputs)
 
 //    std::cout << "process: wrote opcode " << RemotePluginProcess << std::endl;
 
-    gettimeofday(&finish, 0);
+    //gettimeofday(&finish, 0);
 //	std::cout << "process: time " << finish.tv_sec - start.tv_sec
 //		  << " sec, " << finish.tv_usec - start.tv_usec << " usec"
 //		  << std::endl;
