@@ -171,32 +171,6 @@ RemotePluginServer::sizeShm()
 }    
 
 void
-RemotePluginServer::dispatch(int timeout)
-{
-    struct pollfd pfd[2];
-    
-    pfd[0].fd = m_controlRequestFd;
-    pfd[1].fd = m_processFd;
-    pfd[0].events = pfd[1].events = POLLIN | POLLPRI | POLLERR | POLLHUP | POLLNVAL;
-
-    if (poll(pfd, 2, timeout) < 0) {
-	throw RemotePluginClosedException();
-    }
-    
-    if ((pfd[0].revents & POLLIN) || (pfd[0].revents & POLLPRI)) {
-	dispatchControl();
-    } else if (pfd[1].revents) {
-	throw RemotePluginClosedException();
-    }
-    
-    if ((pfd[1].revents & POLLIN) || (pfd[1].revents & POLLPRI)) {
-	dispatchProcess();
-    } else if (pfd[1].revents) {
-	throw RemotePluginClosedException();
-    }
-}
-
-void
 RemotePluginServer::dispatchControl(int timeout)
 {
     struct pollfd pfd;

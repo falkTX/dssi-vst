@@ -63,7 +63,6 @@ public:
     virtual bool setVSTChunk(std::vector<char>) = 0;
     //Deryabin Andrew: vst chunks support: end code
 
-    void dispatch(int timeout = -1); // may throw RemotePluginClosedException
     void dispatchControl(int timeout = -1); // may throw RemotePluginClosedException
     void dispatchProcess(int timeout = -1); // may throw RemotePluginClosedException
 
