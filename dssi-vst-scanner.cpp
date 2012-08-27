@@ -355,6 +355,9 @@ WinMain(HINSTANCE hInst, HINSTANCE hPrevInst, LPSTR cmdline, int cmdshow)
 
 		memset(buffer, 0, 65);
 		plugin->dispatcher(plugin, effGetVendorString, 0, 0, buffer, 0);
+                if (buffer[0] == '\0') {
+                    snprintf(buffer, 64, "Unknown");
+                }
 		write(fd, buffer, 64);
 
 		synth = false;
@@ -377,6 +380,9 @@ WinMain(HINSTANCE hInst, HINSTANCE hPrevInst, LPSTR cmdline, int cmdshow)
 		for (i = 0; i < params; ++i) {
 		    memset(buffer, 0, 65);
 		    plugin->dispatcher(plugin, effGetParamName, i, 0, buffer, 0);
+                    if (buffer[0] == '\0') {
+                        snprintf(buffer, 64, "Unnamed %i", i);
+                    }
 		    write(fd, buffer, 64);
 		    float f = plugin->getParameter(plugin, i);
 		    write(fd, &f, sizeof(float));
@@ -392,6 +398,9 @@ WinMain(HINSTANCE hInst, HINSTANCE hPrevInst, LPSTR cmdline, int cmdshow)
 		    // pass in <index> as well, just in case
 		    plugin->dispatcher(plugin, effSetProgram, 0, i, NULL, 0);
 		    plugin->dispatcher(plugin, effGetProgramName, i, 0, buffer, 0);
+                    if (buffer[0] == '\0') {
+                        snprintf(buffer, 64, "Unnamed %i", i);
+                    }
 		    write(fd, buffer, 64);
 		}
 
