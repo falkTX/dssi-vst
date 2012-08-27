@@ -136,7 +136,11 @@ RemoteVSTClient::addFromFd(int fd, PluginRecord &rec)
 //	    std::cerr << rec.parameters << " parameters" << std::endl;
     
     for (int i = 0; i < rec.parameters; ++i) {
-	tryRead(fd, buffer, 64);
+        try {
+            tryRead(fd, buffer, 64);
+        } catch (RemotePluginClosedException) {
+            return false; // plugin check failed
+        }
 	rec.parameterNames.push_back(std::string(buffer));
 	float f;
 	tryRead(fd, &f, sizeof(float));
