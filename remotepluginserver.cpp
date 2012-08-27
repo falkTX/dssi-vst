@@ -62,11 +62,11 @@ RemotePluginServer::RemotePluginServer(std::string fileIdentifiers) :
     }
 
     bool b = false;
-    sprintf(tmpFileBase, "/tmp/rplugin_shc_%s",
+    sprintf(tmpFileBase, "/dssi-vst-rplugin_shc_%s",
 	    fileIdentifiers.substr(12, 6).c_str());
     m_shmControlFileName = strdup(tmpFileBase);
 
-    m_shmControlFd = open(m_shmControlFileName, O_RDWR);
+    m_shmControlFd = shm_open(m_shmControlFileName, O_RDWR, 0);
     if (m_shmControlFd < 0) {
         tryWrite(m_controlResponseFd, &b, sizeof(bool));
 	cleanup();
@@ -80,11 +80,11 @@ RemotePluginServer::RemotePluginServer(std::string fileIdentifiers) :
         throw((std::string)"Failed to mmap shared memory file");
     }
 
-    sprintf(tmpFileBase, "/tmp/rplugin_shm_%s",
+    sprintf(tmpFileBase, "/dssi-vst-rplugin_shm_%s",
 	    fileIdentifiers.substr(18, 6).c_str());
     m_shmFileName = strdup(tmpFileBase);
 
-    if ((m_shmFd = open(m_shmFileName, O_RDWR)) < 0) {
+    if ((m_shmFd = shm_open(m_shmFileName, O_RDWR, 0)) < 0) {
 	tryWrite(m_controlResponseFd, &b, sizeof(bool));
 	cleanup();
 	throw((std::string)"Failed to open shared memory file");

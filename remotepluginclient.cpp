@@ -6,6 +6,7 @@
 */
 
 #include "remotepluginclient.h"
+#include "paths.h"
 
 #include <sys/mman.h>
 #include <sys/types.h>
@@ -40,6 +41,8 @@ RemotePluginClient::RemotePluginClient() :
 {
     char tmpFileBase[60];
 
+    srand(time(NULL));
+
     sprintf(tmpFileBase, "/tmp/rplugin_crq_XXXXXX");
     if (mkstemp(tmpFileBase) < 0) {
 	cleanup();
@@ -68,18 +71,13 @@ RemotePluginClient::RemotePluginClient() :
 	throw((std::string)"Failed to create FIFO");
     }
 
-    sprintf(tmpFileBase, "/tmp/rplugin_shc_XXXXXX");
-    if (mkstemp(tmpFileBase) < 0) {
-	cleanup();
-	throw((std::string)"Failed to obtain temporary filename");
-    }
-    m_shmControlFileName = strdup(tmpFileBase);
-
-    m_shmControlFd = open(m_shmControlFileName, O_RDWR | O_CREAT | O_TRUNC, S_IRUSR | S_IWUSR);
+    sprintf(tmpFileBase, "/dssi-vst-rplugin_shc_XXXXXX");
+    m_shmControlFd = shm_mkstemp(tmpFileBase);
     if (m_shmControlFd < 0) {
 	cleanup();
 	throw((std::string)"Failed to open or create shared memory file");
     }
+    m_shmControlFileName = strdup(tmpFileBase);
     ftruncate(m_shmControlFd, sizeof(ShmControl));
     m_shmControl = static_cast<ShmControl *>(mmap(0, sizeof(ShmControl), PROT_READ | PROT_WRITE, MAP_SHARED, m_shmControlFd, 0));
     if (!m_shmControl) {
@@ -95,18 +93,13 @@ RemotePluginClient::RemotePluginClient() :
         throw((std::string)"Failed to initialize shared memory semaphore");
     }
 
-    sprintf(tmpFileBase, "/tmp/rplugin_shm_XXXXXX");
-    if (mkstemp(tmpFileBase) < 0) {
-	cleanup();
-	throw((std::string)"Failed to obtain temporary filename");
-    }
-    m_shmFileName = strdup(tmpFileBase);
-
-    m_shmFd = open(m_shmFileName, O_RDWR | O_CREAT | O_TRUNC, S_IRUSR | S_IWUSR);
+    sprintf(tmpFileBase, "/dssi-vst-rplugin_shm_XXXXXX");
+    m_shmFd = shm_mkstemp(tmpFileBase);
     if (m_shmFd < 0) {
 	cleanup();
 	throw((std::string)"Failed to open or create shared memory file");
     }
+    m_shmFileName = strdup(tmpFileBase);
 }
 
 RemotePluginClient::~RemotePluginClient()
@@ -195,12 +188,12 @@ RemotePluginClient::cleanup()
 	m_controlResponseFileName = 0;
     }
     if (m_shmFileName) {
-	unlink(m_shmFileName);
+	shm_unlink(m_shmFileName);
 	free(m_shmFileName);
 	m_shmFileName = 0;
     }
     if (m_shmControlFileName) {
-        unlink(m_shmControlFileName);
+        shm_unlink(m_shmControlFileName);
         free(m_shmControlFileName);
         m_shmControlFileName = 0;
     }
