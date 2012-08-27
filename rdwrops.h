@@ -11,6 +11,9 @@
 #include <vector>
 #include "remoteplugin.h"
 
+// Should be divisible by three
+#define MIDI_BUFFER_SIZE 1023
+
 extern void rdwr_tryRead(int fd, void *buf, size_t count, const char *file, int line);
 extern void rdwr_tryWrite(int fd, const void *buf, size_t count, const char *file, int line);
 extern void rdwr_writeOpcode(int fd, RemotePluginOpcode opcode, const char *file, int line);

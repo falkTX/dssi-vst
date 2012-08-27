@@ -7,6 +7,7 @@
 */
 
 #include "remotevstclient.h"
+#include "rdwrops.h"
 
 #include "dssi/ladspa.h"
 #include "dssi/dssi.h"
@@ -20,9 +21,6 @@
 #include <iostream>
 #include <string.h>
 #include <stdlib.h>
-
-// Should be divisible by three
-#define MIDI_BUFFER_SIZE 1023
 
 class DSSIVSTPluginInstance
 {

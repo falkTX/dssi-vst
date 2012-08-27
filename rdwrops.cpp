@@ -138,19 +138,10 @@ rdwr_readFloat(int fd, const char *file, int line)
 extern unsigned char *
 rdwr_readMIDIData(int fd, int **frameoffsets, int &events, const char *file, int line)
 {
-    static unsigned char *buf = 0;
-    static int *frameoffbuf = 0;
-    static int bufEvts = 0;
+    static unsigned char buf[MIDI_BUFFER_SIZE * 3];
+    static int frameoffbuf[MIDI_BUFFER_SIZE];
 
     rdwr_tryRead(fd, &events, sizeof(int), file, line);
-
-    if (events > bufEvts) {
-	delete buf;
-	delete frameoffbuf;
-	buf = new unsigned char[events * 3];
-	frameoffbuf = new int[events];
-	bufEvts = events;
-    }
 
     rdwr_tryRead(fd, buf, events * 3, file, line);
     rdwr_tryRead(fd, frameoffbuf, events * sizeof(int), file, line);
