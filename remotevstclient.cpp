@@ -74,13 +74,16 @@ RemoteVSTClient::RemoteVSTClient(std::string dllName, bool showGUI) :
 	std::cerr << "RemoteVSTClient: executing "
 		  << fileName << " " << argStr << std::endl;
 
-	if ((child = fork()) < 0) {
+        const char* fileNameStr = fileName.c_str();
+        if ((child = vfork()) < 0) {
 	    cleanup();
 	    throw((std::string)"Fork failed");
 	} else if (child == 0) { // child process
-	    if (execlp(fileName.c_str(), fileName.c_str(), argStr, NULL)) {
+	    if (execlp(fileNameStr, fileNameStr, argStr, NULL)) {
+                // vfork() docs say you shouldn't call a function here,
+                // but it seems to work for me.
 		perror("Exec failed");
-		exit(1);
+		_exit(1);
 	    }
 	}
 
