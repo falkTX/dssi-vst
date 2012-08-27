@@ -142,6 +142,13 @@ alsaSeqCallback(snd_seq_t *alsaSeqHandle)
 		continue;
 	    }
 
+            if (ev->type == SND_SEQ_EVENT_PGMCHANGE) {
+                pthread_mutex_lock(&pluginMutex);
+                plugin->setCurrentProgram(ev->data.control.value);
+                pthread_mutex_unlock(&pluginMutex);
+                continue;
+            }
+
 	    if (midiReadIndex == midiWriteIndex + 1) {
 		fprintf(stderr, "WARNING: MIDI stream buffer overflow\n");
 		continue;
