@@ -21,7 +21,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include "rdwrops.h"
+#include <errno.h>
 
 RemotePluginServer::RemotePluginServer(std::string fileIdentifiers) :
     m_bufferSize(-1),
@@ -29,14 +29,15 @@ RemotePluginServer::RemotePluginServer(std::string fileIdentifiers) :
     m_numOutputs(-1),
     m_controlRequestFd(-1),
     m_controlResponseFd(-1),
-    m_processFd(-1),
     m_shmFd(-1),
+    m_shmControlFd(-1),
     m_controlRequestFileName(0),
     m_controlResponseFileName(0),
-    m_processFileName(0),
     m_shmFileName(0),
+    m_shmControlFileName(0),
     m_shm(0),
     m_shmSize(0),
+    m_shmControl(0),
     m_inputs(0),
     m_outputs(0)
 {
@@ -59,21 +60,29 @@ RemotePluginServer::RemotePluginServer(std::string fileIdentifiers) :
 	cleanup();
 	throw((std::string)"Failed to open FIFO");
     }
-    
-    sprintf(tmpFileBase, "/tmp/rplugin_prc_%s",
-	    fileIdentifiers.substr(12, 6).c_str());
-    m_processFileName = strdup(tmpFileBase);
 
-    if ((m_processFd = open(m_processFileName, O_RDONLY)) < 0) {
+    bool b = false;
+    sprintf(tmpFileBase, "/tmp/rplugin_shc_%s",
+	    fileIdentifiers.substr(12, 6).c_str());
+    m_shmControlFileName = strdup(tmpFileBase);
+
+    m_shmControlFd = open(m_shmControlFileName, O_RDWR);
+    if (m_shmControlFd < 0) {
+        tryWrite(m_controlResponseFd, &b, sizeof(bool));
 	cleanup();
-	throw((std::string)"Failed to open FIFO");
+	throw((std::string)"Failed to open or create shared memory file");
     }
-    
+
+    m_shmControl = static_cast<ShmControl *>(mmap(0, sizeof(ShmControl), PROT_READ | PROT_WRITE, MAP_SHARED, m_shmControlFd, 0));
+    if (!m_shmControl) {
+        tryWrite(m_controlResponseFd, &b, sizeof(bool));
+        cleanup();
+        throw((std::string)"Failed to mmap shared memory file");
+    }
+
     sprintf(tmpFileBase, "/tmp/rplugin_shm_%s",
 	    fileIdentifiers.substr(18, 6).c_str());
     m_shmFileName = strdup(tmpFileBase);
-
-    bool b = false;
 
     if ((m_shmFd = open(m_shmFileName, O_RDWR)) < 0) {
 	tryWrite(m_controlResponseFd, &b, sizeof(bool));
@@ -97,6 +106,10 @@ RemotePluginServer::cleanup()
 	munmap(m_shm, m_shmSize);
 	m_shm = 0;
     }
+    if (m_shmControl) {
+        munmap(m_shmControl, sizeof(ShmControl));
+        m_shmControl = 0;
+    }
     if (m_controlRequestFd >= 0) {
 	close(m_controlRequestFd);
 	m_controlRequestFd = -1;
@@ -105,13 +118,13 @@ RemotePluginServer::cleanup()
 	close(m_controlResponseFd);
 	m_controlResponseFd = -1;
     }
-    if (m_processFd >= 0) {
-	close(m_processFd);
-	m_processFd = -1;
-    }
     if (m_shmFd >= 0) {
 	close(m_shmFd);
 	m_shmFd = -1;
+    }
+    if (m_shmControlFd >= 0) {
+        close(m_shmControlFd);
+        m_shmControlFd = -1;
     }
     if (m_controlRequestFileName) {
 	free(m_controlRequestFileName);
@@ -121,15 +134,15 @@ RemotePluginServer::cleanup()
 	free(m_controlResponseFileName);
 	m_controlResponseFileName = 0;
     }
-    if (m_processFileName) {
-	free(m_processFileName);
-	m_processFileName = 0;
-    }
     if (m_shmFileName) {
 	free(m_shmFileName);
 	m_shmFileName = 0;
     }
-    
+    if (m_shmControlFileName) {
+        free(m_shmControlFileName);
+        m_shmControlFileName = 0;
+    }
+
     delete m_inputs;
     m_inputs = 0;
 
@@ -192,19 +205,30 @@ RemotePluginServer::dispatchControl(int timeout)
 void
 RemotePluginServer::dispatchProcess(int timeout)
 {
-    struct pollfd pfd;
-    
-    pfd.fd = m_processFd;
-    pfd.events = POLLIN | POLLPRI | POLLERR | POLLHUP | POLLNVAL;
-
-    if (poll(&pfd, 1, timeout) < 0) {
-	throw RemotePluginClosedException();
+    timespec ts_timeout;
+    clock_gettime(CLOCK_REALTIME, &ts_timeout);
+    time_t seconds = timeout / 1000;
+    ts_timeout.tv_sec += seconds;
+    ts_timeout.tv_nsec += (timeout - seconds * 1000) * 1000000;
+    if (ts_timeout.tv_nsec >= 1000000000) {
+        ts_timeout.tv_nsec -= 1000000000;
+        ts_timeout.tv_sec++;
     }
-    
-    if ((pfd.revents & POLLIN) || (pfd.revents & POLLPRI)) {
-	dispatchProcessEvents();
-    } else if (pfd.revents) {
-	throw RemotePluginClosedException();
+
+    if (sem_timedwait(&m_shmControl->runServer, &ts_timeout)) {
+        if (errno == ETIMEDOUT) {
+            return;
+        } else {
+            throw RemotePluginClosedException();
+        }
+    }
+
+    while (dataAvailable(&m_shmControl->ringBuffer)) {
+        dispatchProcessEvents();
+    }
+
+    if (sem_post(&m_shmControl->runClient)) {
+        std::cerr << "Could not post to semaphore\n";
     }
 }
 
@@ -213,7 +237,7 @@ RemotePluginServer::dispatchProcessEvents()
 {    
     RemotePluginOpcode opcode = RemotePluginNoOpcode;
 
-    tryRead(m_processFd, &opcode, sizeof(RemotePluginOpcode));
+    tryRead(&m_shmControl->ringBuffer, &opcode, sizeof(RemotePluginOpcode));
 
 //    std::cerr << "read opcode: " << opcode << std::endl;
 
@@ -260,20 +284,20 @@ RemotePluginServer::dispatchProcessEvents()
 	
     case RemotePluginSetParameter:
     {
-	int pn(readInt(m_processFd));
-	setParameter(pn, readFloat(m_processFd));
+        int pn(readInt(&m_shmControl->ringBuffer));
+        setParameter(pn, readFloat(&m_shmControl->ringBuffer));
 	break;
     }
 
     case RemotePluginSetCurrentProgram:
-	setCurrentProgram(readInt(m_processFd));
+	setCurrentProgram(readInt(&m_shmControl->ringBuffer));
 	break;
 
     case RemotePluginSendMIDIData:
     {
 	int events = 0;
 	int *frameoffsets = 0;
-	unsigned char *data = readMIDIData(m_processFd, &frameoffsets, events);
+	unsigned char *data = readMIDIData(&m_shmControl->ringBuffer, &frameoffsets, events);
 	if (events && data && frameoffsets) {
 //    std::cerr << "RemotePluginServer::sendMIDIData(" << events << ")" << std::endl;
 
@@ -284,14 +308,14 @@ RemotePluginServer::dispatchProcessEvents()
 
     case RemotePluginSetBufferSize:
     {
-	int newSize = readInt(m_processFd);
+	int newSize = readInt(&m_shmControl->ringBuffer);
 	setBufferSize(newSize);
 	m_bufferSize = newSize;
 	break;
     }
 
     case RemotePluginSetSampleRate:
-	setSampleRate(readInt(m_processFd));
+	setSampleRate(readInt(&m_shmControl->ringBuffer));
 	break;
 
     default:

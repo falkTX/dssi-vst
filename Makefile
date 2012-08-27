@@ -20,7 +20,7 @@ LINK_FLAGS   = -lz $(LDFLAGS)
 LINK_PLUGIN = -shared $(shell pkg-config --libs alsa jack) $(LINK_FLAGS)
 LINK_HOST   = $(shell pkg-config --libs alsa jack) $(LINK_FLAGS)
 LINK_GUI    = $(shell pkg-config --libs liblo) $(LINK_FLAGS)
-LINK_WINE   = -m32 -L/usr/lib32/wine -L/usr/lib/i386-linux-gnu/wine -lpthread $(LINK_FLAGS)
+LINK_WINE   = -m32 -L/usr/lib32/wine -L/usr/lib/i386-linux-gnu/wine -lpthread -lrt $(LINK_FLAGS)
 
 TARGETS     = dssi-vst.so dssi-vst_gui vsthost dssi-vst-scanner.exe dssi-vst-server.exe
 

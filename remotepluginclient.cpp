@@ -25,14 +25,15 @@
 RemotePluginClient::RemotePluginClient() :
     m_controlRequestFd(-1),
     m_controlResponseFd(-1),
-    m_processFd(-1),
     m_shmFd(-1),
+    m_shmControlFd(-1),
     m_controlRequestFileName(0),
     m_controlResponseFileName(0),
-    m_processFileName(0),
     m_shmFileName(0),
+    m_shmControlFileName(0),
     m_shm(0),
     m_shmSize(0),
+    m_shmControl(0),
     m_bufferSize(-1),
     m_numInputs(-1),
     m_numOutputs(-1)
@@ -67,18 +68,31 @@ RemotePluginClient::RemotePluginClient() :
 	throw((std::string)"Failed to create FIFO");
     }
 
-    sprintf(tmpFileBase, "/tmp/rplugin_prc_XXXXXX");
+    sprintf(tmpFileBase, "/tmp/rplugin_shc_XXXXXX");
     if (mkstemp(tmpFileBase) < 0) {
 	cleanup();
 	throw((std::string)"Failed to obtain temporary filename");
     }
-    m_processFileName = strdup(tmpFileBase);
+    m_shmControlFileName = strdup(tmpFileBase);
 
-    unlink(m_processFileName);
-    if (mkfifo(m_processFileName, 0666)) {
-	perror(m_processFileName);
+    m_shmControlFd = open(m_shmControlFileName, O_RDWR | O_CREAT | O_TRUNC, S_IRUSR | S_IWUSR);
+    if (m_shmControlFd < 0) {
 	cleanup();
-	throw((std::string)"Failed to create FIFO");
+	throw((std::string)"Failed to open or create shared memory file");
+    }
+    ftruncate(m_shmControlFd, sizeof(ShmControl));
+    m_shmControl = static_cast<ShmControl *>(mmap(0, sizeof(ShmControl), PROT_READ | PROT_WRITE, MAP_SHARED, m_shmControlFd, 0));
+    if (!m_shmControl) {
+        cleanup();
+        throw((std::string)"Failed to mmap shared memory file");
+    }
+
+    memset(m_shmControl, 0, sizeof(ShmControl));
+    if (sem_init(&m_shmControl->runServer, 1, 0)) {
+        throw((std::string)"Failed to initialize shared memory semaphore");
+    }
+    if (sem_init(&m_shmControl->runClient, 1, 0)) {
+        throw((std::string)"Failed to initialize shared memory semaphore");
     }
 
     sprintf(tmpFileBase, "/tmp/rplugin_shm_XXXXXX");
@@ -106,7 +120,7 @@ RemotePluginClient::syncStartup()
     // The first (write) fd we open in a nonblocking call, with a
     // short retry loop so we can easily give up if the other end
     // doesn't appear to be responding.  We want a nonblocking FIFO
-    // for this and the process fd anyway.
+    // for this anyway.
 
     bool connected = false;
     int timeout = 40;
@@ -135,26 +149,6 @@ RemotePluginClient::syncStartup()
 	throw((std::string)"Failed to open control FIFO");
     }
 
-    connected = false;
-
-    for (int attempt = 0; attempt < 6; ++attempt) {
-
-	if ((m_processFd = open(m_processFileName, O_WRONLY | O_NONBLOCK)) >= 0) {
-	    connected = true;
-	    break;
-	} else if (errno != ENXIO) {
-	    // an actual error occurred
-	    break;
-	}
-
-	sleep(1);
-    }
-	
-    if (!connected) {
-	cleanup();
-	throw((std::string)"Failed to open process FIFO");
-    }
-
     bool b = false;
     tryRead(m_controlResponseFd, &b, sizeof(bool));
     if (!b) {
@@ -170,6 +164,10 @@ RemotePluginClient::cleanup()
 	munmap(m_shm, m_shmSize);
 	m_shm = 0;
     }
+    if (m_shmControl) {
+        munmap(m_shmControl, sizeof(ShmControl));
+        m_shmControl = 0;
+    }
     if (m_controlRequestFd >= 0) {
 	close(m_controlRequestFd);
 	m_controlRequestFd = -1;
@@ -178,13 +176,13 @@ RemotePluginClient::cleanup()
 	close(m_controlResponseFd);
 	m_controlResponseFd = -1;
     }
-    if (m_processFd >= 0) {
-	close(m_processFd);
-	m_processFd = -1;
-    }
     if (m_shmFd >= 0) {
 	close(m_shmFd);
 	m_shmFd = -1;
+    }
+    if (m_shmControlFd >= 0) {
+        close(m_shmControlFd);
+        m_shmControlFd = -1;
     }
     if (m_controlRequestFileName) {
 	unlink(m_controlRequestFileName);
@@ -196,15 +194,15 @@ RemotePluginClient::cleanup()
 	free(m_controlResponseFileName);
 	m_controlResponseFileName = 0;
     }
-    if (m_processFileName) {
-	unlink(m_processFileName);
-	free(m_processFileName);
-	m_processFileName = 0;
-    }
     if (m_shmFileName) {
 	unlink(m_shmFileName);
 	free(m_shmFileName);
 	m_shmFileName = 0;
+    }
+    if (m_shmControlFileName) {
+        unlink(m_shmControlFileName);
+        free(m_shmControlFileName);
+        m_shmControlFileName = 0;
     }
 }
 
@@ -214,7 +212,7 @@ RemotePluginClient::getFileIdentifiers()
     std::string id;
     id += m_controlRequestFileName + strlen(m_controlRequestFileName) - 6;
     id += m_controlResponseFileName + strlen(m_controlResponseFileName) - 6;
-    id += m_processFileName + strlen(m_processFileName) - 6;
+    id += m_shmControlFileName + strlen(m_shmControlFileName) - 6;
     id += m_shmFileName + strlen(m_shmFileName) - 6;
     std::cerr << "Returning file identifiers: " << id << std::endl;
     return id;
@@ -272,21 +270,25 @@ RemotePluginClient::setBufferSize(int s)
     if (s == m_bufferSize) return;
     m_bufferSize = s;
     sizeShm();
-    writeOpcode(m_controlRequestFd, RemotePluginReset);
-    writeInt(m_processFd, s);
+    writeOpcode(&m_shmControl->ringBuffer, RemotePluginSetBufferSize);
+    writeInt(&m_shmControl->ringBuffer, s);
+    commitWrite(&m_shmControl->ringBuffer);
+    waitForServer();
 }
 
 void
 RemotePluginClient::setSampleRate(int s)
 {
-    writeOpcode(m_processFd, RemotePluginSetSampleRate);
-    writeInt(m_processFd, s);
+    writeOpcode(&m_shmControl->ringBuffer, RemotePluginSetSampleRate);
+    writeInt(&m_shmControl->ringBuffer, s);
+    commitWrite(&m_shmControl->ringBuffer);
+    waitForServer();
 }
 
 void
 RemotePluginClient::reset()
 {
-    writeOpcode(m_processFd, RemotePluginReset);
+    writeOpcode(m_controlRequestFd, RemotePluginReset);
     if (m_shmSize > 0) {
 	memset(m_shm, 0, m_shmSize);
     }
@@ -334,9 +336,10 @@ RemotePluginClient::getParameterName(int p)
 void
 RemotePluginClient::setParameter(int p, float v)
 {
-    writeOpcode(m_processFd, RemotePluginSetParameter);
-    writeInt(m_processFd, p);
-    writeFloat(m_processFd, v);
+    writeOpcode(&m_shmControl->ringBuffer, RemotePluginSetParameter);
+    writeInt(&m_shmControl->ringBuffer, p);
+    writeFloat(&m_shmControl->ringBuffer, v);
+    commitWrite(&m_shmControl->ringBuffer);
 }
 
 float
@@ -391,16 +394,18 @@ RemotePluginClient::getProgramName(int n)
 void
 RemotePluginClient::setCurrentProgram(int n)
 {
-    writeOpcode(m_processFd, RemotePluginSetCurrentProgram);
-    writeInt(m_processFd, n);
+    writeOpcode(&m_shmControl->ringBuffer, RemotePluginSetCurrentProgram);
+    writeInt(&m_shmControl->ringBuffer, n);
+    commitWrite(&m_shmControl->ringBuffer);
+    waitForServer();
 }
 
 void
 RemotePluginClient::sendMIDIData(unsigned char *data, int *frameoffsets, int events)
 {
-    writeOpcode(m_processFd, RemotePluginSendMIDIData);
-    writeInt(m_processFd, events);
-    tryWrite(m_processFd, data, events * 3);
+    writeOpcode(&m_shmControl->ringBuffer, RemotePluginSendMIDIData);
+    writeInt(&m_shmControl->ringBuffer, events);
+    tryWrite(&m_shmControl->ringBuffer, data, events * 3);
 
     if (!frameoffsets) {
 	// This should not happen with a good client, but we'd better
@@ -411,7 +416,8 @@ RemotePluginClient::sendMIDIData(unsigned char *data, int *frameoffsets, int eve
 
 //    std::cerr << "RemotePluginClient::sendMIDIData(" << events << ")" << std::endl;
 
-    tryWrite(m_processFd, frameoffsets, events * sizeof(int));
+    tryWrite(&m_shmControl->ringBuffer, frameoffsets, events * sizeof(int));
+    commitWrite(&m_shmControl->ringBuffer);
 }
 
 void
@@ -442,16 +448,19 @@ RemotePluginClient::process(float **inputs, float **outputs)
     //!!! put counter in shm to indicate number of blocks processed?
     // (so we know if we've screwed up)
 
-    // retrieve results of previous process() instead of waiting for this
-    for (int i = 0; i < m_numOutputs; ++i) {
-	memcpy(outputs[i], m_shm + (i + m_numInputs) * blocksz, blocksz);
-    }
-
     for (int i = 0; i < m_numInputs; ++i) {
 	memcpy(m_shm + i * blocksz, inputs[i], blocksz);
     }
 
-    writeOpcode(m_processFd, RemotePluginProcess);
+    writeOpcode(&m_shmControl->ringBuffer, RemotePluginProcess);
+    commitWrite(&m_shmControl->ringBuffer);
+
+    waitForServer();
+
+    for (int i = 0; i < m_numOutputs; ++i) {
+        memcpy(outputs[i], m_shm + (i + m_numInputs) * blocksz, blocksz);
+    }
+
 
 //    std::cout << "process: wrote opcode " << RemotePluginProcess << std::endl;
 
@@ -460,6 +469,19 @@ RemotePluginClient::process(float **inputs, float **outputs)
 //		  << " sec, " << finish.tv_usec - start.tv_usec << " usec"
 //		  << std::endl;
     return;
+}
+
+void
+RemotePluginClient::waitForServer()
+{
+    sem_post(&m_shmControl->runServer);
+
+    timespec ts_timeout;
+    clock_gettime(CLOCK_REALTIME, &ts_timeout);
+    ts_timeout.tv_sec += 5;
+    if (sem_timedwait(&m_shmControl->runClient, &ts_timeout) != 0) {
+        throw RemotePluginClosedException();
+    }
 }
 
 void

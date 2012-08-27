@@ -9,6 +9,7 @@
 #define REMOTE_PLUGIN_SERVER_H
 
 #include "remoteplugin.h"
+#include "rdwrops.h"
 #include <string>
 #include <vector>
 
@@ -84,16 +85,17 @@ private:
 
     int m_controlRequestFd;
     int m_controlResponseFd;
-    int m_processFd;
     int m_shmFd;
+    int m_shmControlFd;
 
     char *m_controlRequestFileName;
     char *m_controlResponseFileName;
-    char *m_processFileName;
     char *m_shmFileName;
+    char *m_shmControlFileName;
 
     char *m_shm;
     size_t m_shmSize;
+    ShmControl *m_shmControl;
 
     float **m_inputs;
     float **m_outputs;

@@ -9,6 +9,7 @@
 #define REMOTE_PLUGIN_CLIENT_H
 
 #include "remoteplugin.h"
+#include "rdwrops.h"
 #include <string>
 #include <vector>
 #include <sys/shm.h>
@@ -56,6 +57,8 @@ public:
     // Either inputs or outputs may be NULL if (and only if) there are none
     void         process(float **inputs, float **outputs);
 
+    void         waitForServer();
+
     void         setDebugLevel(RemotePluginDebugLevel);
     bool         warn(std::string);
 
@@ -79,16 +82,17 @@ private:
 
     int m_controlRequestFd;
     int m_controlResponseFd;
-    int m_processFd;
     int m_shmFd;
+    int m_shmControlFd;
 
     char *m_controlRequestFileName;
     char *m_controlResponseFileName;
-    char *m_processFileName;
     char *m_shmFileName;
+    char *m_shmControlFileName;
 
     char *m_shm;
     size_t m_shmSize;
+    ShmControl *m_shmControl;
 
     int m_bufferSize;
     int m_numInputs;

@@ -171,12 +171,6 @@ Bad points:
   plugins would cope better with this by having the server take
   ownership of such resources instead of the DSSI plugin.
 
-* The comms model dssi-vst uses introduces a fixed latency equal to
-  the JACK period size, as well as any existing latency in the VST
-  plugin.  (The fixed latency is exposed through the _latency output
-  control port.  Does anyone know how to find out the latency of a
-  VST plugin?)
-
 
 Licence
 -------
