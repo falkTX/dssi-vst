@@ -510,9 +510,7 @@ RemoteVSTServer::sendMIDIData(unsigned char *data, int *frameOffsets, int events
     pthread_mutex_lock(&mutex);
 
     vstev->numEvents = events;
-    if (!m_plugin->dispatcher(m_plugin, effProcessEvents, 0, 0, vstev, 0)) {
-	cerr << "WARNING: " << ix << " MIDI event(s) rejected by plugin" << endl;
-    }
+    m_plugin->dispatcher(m_plugin, effProcessEvents, 0, 0, vstev, 0);
 
     pthread_mutex_unlock(&mutex);
 }
