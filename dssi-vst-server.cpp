@@ -778,7 +778,8 @@ hostCallback(AEffect *plugin, long opcode, long index,
 	if (debugLevel > 1)
 	    cerr << "dssi-vst-server[2]: audioMasterAutomate(" << index << "," << v << ")" << endl;
 
-	remoteVSTServerInstance->scheduleGUINotify(index, v);
+	if (remoteVSTServerInstance)
+	    remoteVSTServerInstance->scheduleGUINotify(index, v);
 
 	break;
     }
