@@ -830,33 +830,40 @@ hostCallback(AEffect *plugin, long opcode, long index,
 
             jack_state = jack_transport_query(jack_client, &jack_pos);
 
-            timeInfo.flags |= kVstTransportChanged;
-
-            if (jack_state != JackTransportStopped)
-                timeInfo.flags |= kVstTransportPlaying;
-
             if (jack_pos.unique_1 == jack_pos.unique_2)
             {
-                timeInfo.sampleRate = jack_pos.frame_rate;
-                timeInfo.samplePos  = jack_pos.frame;
+                timeInfo.sampleRate  = jack_pos.frame_rate;
+                timeInfo.samplePos   = jack_pos.frame;
+                timeInfo.nanoSeconds = jack_pos.usecs*1000;
+
+                timeInfo.flags |= kVstTransportChanged;
+                timeInfo.flags |= kVstNanosValid;
+
+                if (jack_state != JackTransportStopped)
+                    timeInfo.flags |= kVstTransportPlaying;
 
                 if (jack_pos.valid & JackPositionBBT)
                 {
+                    double ppqBar  = double(jack_pos.bar - 1) * jack_pos.beats_per_bar;
+                    double ppqBeat = double(jack_pos.beat - 1);
+                    double ppqTick = double(jack_pos.tick) / jack_pos.ticks_per_beat;
+
+                    // PPQ Pos
+                    timeInfo.ppqPos = ppqBar + ppqBeat + ppqTick;
+                    timeInfo.flags |= kVstPpqPosValid;
+
                     // Tempo
                     timeInfo.tempo  = jack_pos.beats_per_minute;
                     timeInfo.flags |= kVstTempoValid;
+
+                    // Bars
+                    timeInfo.barStartPos = ppqBar;
+                    timeInfo.flags |= kVstBarsValid;
 
                     // Time Signature
                     timeInfo.timeSigNumerator   = jack_pos.beats_per_bar;
                     timeInfo.timeSigDenominator = jack_pos.beat_type;
                     timeInfo.flags |= kVstTimeSigValid;
-
-                    // Position
-                    double dPos = timeInfo.samplePos / timeInfo.sampleRate;
-                    timeInfo.barStartPos = 0;
-                    timeInfo.nanoSeconds = dPos * 1000.0;
-                    timeInfo.ppqPos = dPos * timeInfo.tempo / 60.0;
-                    timeInfo.flags |= kVstBarsValid|kVstNanosValid|kVstPpqPosValid;
                 }
             }
         }
