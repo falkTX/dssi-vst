@@ -825,8 +825,8 @@ hostCallback(AEffect *plugin, long opcode, long index,
 
         if (jack_client)
         {
-            static jack_position_t jack_pos;
-            static jack_transport_state_t jack_state;
+            jack_position_t jack_pos;
+            jack_transport_state_t jack_state;
 
             jack_state = jack_transport_query(jack_client, &jack_pos);
 
@@ -834,12 +834,12 @@ hostCallback(AEffect *plugin, long opcode, long index,
             {
                 timeInfo.sampleRate  = jack_pos.frame_rate;
                 timeInfo.samplePos   = jack_pos.frame;
-                timeInfo.nanoSeconds = jack_pos.usecs*1000;
+                timeInfo.nanoSeconds = jack_pos.usecs/1000;
 
                 timeInfo.flags |= kVstTransportChanged;
                 timeInfo.flags |= kVstNanosValid;
 
-                if (jack_state != JackTransportStopped)
+                if (jack_state == JackTransportRolling)
                     timeInfo.flags |= kVstTransportPlaying;
 
                 if (jack_pos.valid & JackPositionBBT)
