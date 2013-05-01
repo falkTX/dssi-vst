@@ -66,7 +66,7 @@ protected:
 
     LADSPA_Data               *m_latencyOut;
 
-    DSSI_Program_Descriptor  **m_programs;
+    DSSI_Program_Descriptor   *m_programs;
     unsigned long              m_programCount;
 
     unsigned char              m_decodeBuffer[MIDI_BUFFER_SIZE];
@@ -192,12 +192,11 @@ DSSIVSTPluginInstance::DSSIVSTPluginInstance(std::string dllName,
     m_audioOuts = new LADSPA_Data*[m_audioOutCount];
 
     m_programCount = m_plugin->getProgramCount();
-    m_programs = new DSSI_Program_Descriptor*[m_programCount];
+    m_programs = new DSSI_Program_Descriptor[m_programCount];
     for (unsigned long i = 0; i < m_programCount; ++i) {
-	m_programs[i] = new DSSI_Program_Descriptor;
-	m_programs[i]->Bank = 0;
-	m_programs[i]->Program = i;
-	m_programs[i]->Name = strdup(m_plugin->getProgramName(i).c_str());
+	m_programs[i].Bank = 0;
+	m_programs[i].Program = i;
+	m_programs[i].Name = strdup(m_plugin->getProgramName(i).c_str());
     }
 
     snd_midi_event_new(MIDI_BUFFER_SIZE, &m_alsaDecoder);
@@ -241,8 +240,7 @@ DSSIVSTPluginInstance::~DSSIVSTPluginInstance()
     delete[] m_audioOuts;
 
     for (unsigned long i = 0; i < m_programCount; ++i) {
-	free((void *)m_programs[i]->Name);
-	delete m_programs[i];
+	free((void *)m_programs[i].Name);
     }
     delete[] m_programs;
 }
@@ -311,8 +309,7 @@ const DSSI_Program_Descriptor *
 DSSIVSTPluginInstance::getProgram(unsigned long index)
 {
     if (index >= m_programCount) return 0;
-    m_programs[index]->Name = strdup(m_programs[index]->Name); // host frees
-    return m_programs[index];
+    return &m_programs[index];
 }
 
 void
