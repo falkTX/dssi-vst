@@ -160,52 +160,13 @@ DSSIVSTPluginInstance::DSSIVSTPluginInstance(std::string dllName,
     try {
 	m_plugin = new RemoteVSTClient(dllName);
 
-	m_controlPortCount = m_plugin->getParameterCount();
-	m_controlPorts = new LADSPA_Data*[m_controlPortCount];
-	m_controlPortsSaved = new LADSPA_Data[m_controlPortCount];
-
-	for (unsigned long i = 0; i < m_controlPortCount; ++i) {
-	    m_controlPortsSaved[i] = NO_CONTROL_DATA;
-	}
-	
-	m_audioInCount = m_plugin->getInputCount();
-	m_audioIns = new LADSPA_Data*[m_audioInCount];
-
-	m_audioOutCount = m_plugin->getOutputCount();
-	m_audioOuts = new LADSPA_Data*[m_audioOutCount];
-
-	m_programCount = m_plugin->getProgramCount();
-	m_programs = new DSSI_Program_Descriptor*[m_programCount];
-	for (unsigned long i = 0; i < m_programCount; ++i) {
-	    m_programs[i] = new DSSI_Program_Descriptor;
-	    m_programs[i]->Bank = 0;
-	    m_programs[i]->Program = i;
-	    m_programs[i]->Name = strdup(m_plugin->getProgramName(i).c_str());
-	}
-
-	snd_midi_event_new(MIDI_BUFFER_SIZE, &m_alsaDecoder);
-	if (!m_alsaDecoder) {
-	    std::cerr << "DSSIVSTPluginInstance::DSSIVSTPluginInstance("
-		      << dllName << "): failed to initialize ALSA MIDI decoder"
-		      << std::endl;
-	} else {
-	    snd_midi_event_no_status(m_alsaDecoder, 1);
-	}
-
-	std::cerr << "DSSIVSTPluginInstance(" << this << "): setting OK true" << std::endl;
-
-	m_ok = true;
-
     } catch (RemotePluginClosedException) {
 	std::cerr << "DSSIVSTPluginInstance::DSSIVSTPluginInstance("
 		  << dllName << "): startup failed" << std::endl;
 
 	m_ok = false;
 	delete m_plugin; m_plugin = 0;
-	delete m_controlPorts; m_controlPorts = 0;
-	delete m_controlPortsSaved; m_controlPortsSaved = 0;
-	delete m_audioIns; m_audioIns = 0;
-	delete m_audioOuts; m_audioOuts = 0;
+	return;
 
     } catch (std::string message) {
 	std::cerr << "DSSIVSTPluginInstance::DSSIVSTPluginInstance("
@@ -213,12 +174,42 @@ DSSIVSTPluginInstance::DSSIVSTPluginInstance(std::string dllName,
 	
 	m_ok = false;
 	delete m_plugin; m_plugin = 0;
-	delete m_controlPorts; m_controlPorts = 0;
-	delete m_controlPortsSaved; m_controlPortsSaved = 0;
-	delete m_audioIns; m_audioIns = 0;
-	delete m_audioOuts; m_audioOuts = 0;
+	return;
     }
 
+    m_controlPortCount = m_plugin->getParameterCount();
+    m_controlPorts = new LADSPA_Data*[m_controlPortCount];
+    m_controlPortsSaved = new LADSPA_Data[m_controlPortCount];
+
+    for (unsigned long i = 0; i < m_controlPortCount; ++i) {
+	m_controlPortsSaved[i] = NO_CONTROL_DATA;
+    }
+
+    m_audioInCount = m_plugin->getInputCount();
+    m_audioIns = new LADSPA_Data*[m_audioInCount];
+
+    m_audioOutCount = m_plugin->getOutputCount();
+    m_audioOuts = new LADSPA_Data*[m_audioOutCount];
+
+    m_programCount = m_plugin->getProgramCount();
+    m_programs = new DSSI_Program_Descriptor*[m_programCount];
+    for (unsigned long i = 0; i < m_programCount; ++i) {
+	m_programs[i] = new DSSI_Program_Descriptor;
+	m_programs[i]->Bank = 0;
+	m_programs[i]->Program = i;
+	m_programs[i]->Name = strdup(m_plugin->getProgramName(i).c_str());
+    }
+
+    snd_midi_event_new(MIDI_BUFFER_SIZE, &m_alsaDecoder);
+    if (!m_alsaDecoder) {
+	std::cerr << "DSSIVSTPluginInstance::DSSIVSTPluginInstance("
+		  << dllName << "): failed to initialize ALSA MIDI decoder"
+		  << std::endl;
+    } else {
+	snd_midi_event_no_status(m_alsaDecoder, 1);
+    }
+
+    m_ok = true;
     std::cerr << "DSSIVSTPluginInstance::DSSIVSTPluginInstance(" << dllName << ") construction complete" << std::endl;
 }
 
@@ -233,24 +224,27 @@ DSSIVSTPluginInstance::~DSSIVSTPluginInstance()
 	} catch (RemotePluginClosedException) { }
     }
 
-    delete m_plugin;
+    if (!m_plugin) {
+	return;
+    }
 
+    delete m_plugin;
     delete m_chunkdata;
 
     if (m_alsaDecoder) {
 	snd_midi_event_free(m_alsaDecoder);
     }
 
-    delete m_controlPorts;
-    delete m_controlPortsSaved;
-    delete m_audioIns;
-    delete m_audioOuts;
+    delete[] m_controlPorts;
+    delete[] m_controlPortsSaved;
+    delete[] m_audioIns;
+    delete[] m_audioOuts;
 
     for (unsigned long i = 0; i < m_programCount; ++i) {
 	free((void *)m_programs[i]->Name);
 	delete m_programs[i];
     }
-    delete m_programs;
+    delete[] m_programs;
 }
 
 void
