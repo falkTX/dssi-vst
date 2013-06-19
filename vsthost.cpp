@@ -453,7 +453,7 @@ closeJack()
 void
 usage()
 {
-    fprintf(stderr, "Usage: vsthost [-n] [-d<x>] <dll>\n    -n  No GUI\n    -d  Debug level (0, 1, 2 or 3)\n");
+    fprintf(stderr, "Usage: vsthost [-n] <dll>\n    -n  No GUI\n");
     exit(2);
 }    
 
@@ -461,7 +461,6 @@ int
 main(int argc, char **argv)
 {
     char *dllname = 0;
-    int   debugLevel = 0;
     bool  gui = true;
 
     int npfd;
@@ -474,11 +473,7 @@ main(int argc, char **argv)
 	else if (c == 'n') {
 	    gui = false;
 	} else if (c == 'd') {
-	    int dl = atoi(optarg);
-	    if (dl >= 0 && dl < 4) debugLevel = dl;
-	    else {
-		usage();
-	    }
+	    fprintf(stderr, "NOTE: Ignoring unsupported -d option for backward compatibility\n");
 	} else {
 	    usage();
 	}
