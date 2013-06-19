@@ -46,26 +46,30 @@ RemoteVSTClient::RemoteVSTClient(std::string dllName, bool showGUI) :
 
     bool found = false;
 
+    std::string sought;
+
     for (size_t i = 0; i < dssiPath.size(); ++i) {
 
 	std::string subDir = dssiPath[i] + "/dssi-vst";
+	std::string fileName = subDir + "/dssi-vst-server.exe";
 
 	DIR *directory = opendir(subDir.c_str());
 	if (!directory) {
+	    sought += " " + fileName;
 	    continue;
 	}
 	closedir(directory);
 
 	struct stat st;
-	std::string fileName = subDir + "/dssi-vst-server.exe";
 
 	if (stat(fileName.c_str(), &st)) {
+	    sought += " " + fileName;
 	    continue;
 	}
 
 	if (!(S_ISREG(st.st_mode) || S_ISLNK(st.st_mode)) ||
 	    !(st.st_mode & (S_IXUSR | S_IXGRP | S_IXOTH))) {
-
+	    sought += " " + fileName;
 	    std::cerr << "RemoteVSTClient: file " << fileName
 		      << " exists but can't be executed" << std::endl;
 	    continue;
@@ -94,7 +98,8 @@ RemoteVSTClient::RemoteVSTClient(std::string dllName, bool showGUI) :
 
     if (!found) {
 	cleanup();
-	throw((std::string)"Failed to find dssi-vst-server.exe");
+	throw(std::string("Failed to find dssi-vst-server.exe [tried:" +
+			  sought + "]"));
     } else {
 	syncStartup();
     }
@@ -316,26 +321,30 @@ RemoteVSTClient::queryPlugins(std::vector<PluginRecord> &plugins)
     bool found = false;
     pid_t child;
 
+    std::string sought;
+
     for (size_t i = 0; i < dssiPath.size(); ++i) {
 
 	std::string subDir = dssiPath[i] + "/dssi-vst";
+	std::string fileName = subDir + "/dssi-vst-scanner.exe";
 
 	DIR *directory = opendir(subDir.c_str());
 	if (!directory) {
+	    sought += " " + fileName;
 	    continue;
 	}
 	closedir(directory);
 
 	struct stat st;
-	std::string fileName = subDir + "/dssi-vst-scanner.exe";
 
 	if (stat(fileName.c_str(), &st)) {
+	    sought += " " + fileName;
 	    continue;
 	}
 
 	if (!(S_ISREG(st.st_mode) || S_ISLNK(st.st_mode)) ||
 	    !(st.st_mode & (S_IXUSR | S_IXGRP | S_IXOTH))) {
-
+	    sought += " " + fileName;
 	    std::cerr << "RemoteVSTClient: file " << fileName
 		      << " exists but can't be executed" << std::endl;
 	    continue;
@@ -362,7 +371,8 @@ RemoteVSTClient::queryPlugins(std::vector<PluginRecord> &plugins)
 
     if (!found) {
 	unlink(fifoFile);
-	throw((std::string)"Failed to find dssi-vst-scanner.exe");
+	throw(std::string("Failed to find dssi-vst-scanner.exe [tried:" +
+			  sought + "]"));
     }
 
     struct pollfd pfd;
@@ -401,6 +411,9 @@ RemoteVSTClient::queryPlugins(std::vector<PluginRecord> &plugins)
 
 	tryRead(fd, &version, sizeof(int));
 	if (version != int(RemotePluginVersion * 1000)) {
+	    std::cerr << "RemoteVSTClient: Remote plugin version reported as "
+		      << version << ", I expected "
+		      << (RemotePluginVersion * 1000) << std::endl;
 	    throw ((std::string)"Plugin scanner version mismatch");
 	}
 
