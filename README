@@ -5,10 +5,12 @@ dssi-vst: a DSSI plugin wrapper for VST plugins
 This is a DSSI plugin wrapper for VST effects and instruments with GUI
 support.
 
-Copyright (c) 2004-2010 Chris Cannam, cannam@all-day-breakfast.com.
+Copyright (c) 2012-2013 Filipe Coelho, falktx@gmail.com
+Copyright (c) 2010-2011 Kristian Amlie, kristian@amlie.name
+Copyright (c) 2004-2010 Chris Cannam, cannam@all-day-breakfast.com
 
-This is the 0.9 release of dssi-vst.  The only change since 0.8 is a
-fix to plugin idle handling thanks to Robert Jonsson and Torben Hohn.
+The 0.9 release of dssi-vst added a fix to plugin idle handling thanks
+to Robert Jonsson and Torben Hohn.
 
 The 0.8 release added 64-bit support in the Makefile and a few other
 fixes.

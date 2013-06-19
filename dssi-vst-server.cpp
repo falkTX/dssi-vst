@@ -1251,6 +1251,8 @@ WinMain(HINSTANCE hInst, HINSTANCE hPrevInst, LPSTR cmdline, int cmdshow)
     bool tryGui = false, haveGui = true;
 
     cout << "DSSI VST plugin server v" << RemotePluginVersion << endl;
+    cout << "Copyright (c) 2012-2013 Filipe Coelho" << endl;
+    cout << "Copyright (c) 2010-2011 Kristian Amlie" << endl;
     cout << "Copyright (c) 2004-2010 Chris Cannam" << endl;
 
     char *home = getenv("HOME");
