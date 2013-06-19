@@ -3,6 +3,8 @@
 
 /*
   dssi-vst: a DSSI plugin wrapper for VST effects and instruments
+  Copyright 2012-2013 Filipe Coelho
+  Copyright 2010-2011 Kristian Amlie
   Copyright 2004-2010 Chris Cannam
 */
 
