@@ -12,6 +12,7 @@
 #include <errno.h>
 #include <unistd.h>
 #include <string.h>
+#include <zlib.h>
 #include <cstdio>
 #include <iostream>
 
@@ -86,20 +87,19 @@ rdwr_tryRead(RingBuffer *ringbuf, void *buf, size_t count, const char *file, int
     size_t wrap = 0;
 
     if (head <= tail) {
-	wrap = SHM_RING_BUFFER_SIZE;
+        wrap = SHM_RING_BUFFER_SIZE;
     }
     if (head - tail + wrap < count) {
-	throw RemotePluginClosedException();
+        throw RemotePluginClosedException();
     }
-
     size_t readto = tail + count;
     if (readto >= SHM_RING_BUFFER_SIZE) {
-	readto -= SHM_RING_BUFFER_SIZE;
-	size_t firstpart = SHM_RING_BUFFER_SIZE - tail;
-	memcpy(charbuf, ringbuf->buf + tail, firstpart);
-	memcpy(charbuf + firstpart, ringbuf->buf, readto);
+        readto -= SHM_RING_BUFFER_SIZE;
+        size_t firstpart = SHM_RING_BUFFER_SIZE - tail;
+        memcpy(charbuf, ringbuf->buf + tail, firstpart);
+        memcpy(charbuf + firstpart, ringbuf->buf, readto);
     } else {
-	memcpy(charbuf, ringbuf->buf + tail, count);
+        memcpy(charbuf, ringbuf->buf + tail, count);
     }
     ringbuf->tail = readto;
 }
@@ -111,24 +111,23 @@ rdwr_tryWrite(RingBuffer *ringbuf, const void *buf, size_t count, const char *fi
     size_t written = ringbuf->written;
     size_t tail = ringbuf->tail;
     size_t wrap = 0;
-
     if (tail <= written) {
-	wrap = SHM_RING_BUFFER_SIZE;
+        wrap = SHM_RING_BUFFER_SIZE;
     }
     if (tail - written + wrap < count) {
-	std::cerr << "Operation ring buffer full! Dropping events." << std::endl;
-	ringbuf->invalidateCommit = true;
-	return;
+        std::cerr << "Operation ring buffer full! Dropping events." << std::endl;
+        ringbuf->invalidateCommit = true;
+        return;
     }
 
     size_t writeto = written + count;
     if (writeto >= SHM_RING_BUFFER_SIZE) {
-	writeto -= SHM_RING_BUFFER_SIZE;
-	size_t firstpart = SHM_RING_BUFFER_SIZE - written;
-	memcpy(ringbuf->buf + written, charbuf, firstpart);
-	memcpy(ringbuf->buf, charbuf + firstpart, writeto);
+        writeto -= SHM_RING_BUFFER_SIZE;
+        size_t firstpart = SHM_RING_BUFFER_SIZE - written;
+        memcpy(ringbuf->buf + written, charbuf, firstpart);
+        memcpy(ringbuf->buf, charbuf + firstpart, writeto);
     } else {
-	memcpy(ringbuf->buf + written, charbuf, count);
+        memcpy(ringbuf->buf + written, charbuf, count);
     }
     ringbuf->written = writeto;
 }
@@ -137,10 +136,10 @@ void
 rdwr_commitWrite(RingBuffer *ringbuf, const char *file, int line)
 {
     if (ringbuf->invalidateCommit) {
-	ringbuf->written = ringbuf->head;
-	ringbuf->invalidateCommit = false;
+        ringbuf->written = ringbuf->head;
+        ringbuf->invalidateCommit = false;
     } else {
-	ringbuf->head = ringbuf->written;
+        ringbuf->head = ringbuf->written;
     }
 }
 
@@ -151,9 +150,11 @@ bool dataAvailable(RingBuffer *ringbuf)
 
 template <typename T> void
 rdwr_writeOpcode(T fd, RemotePluginOpcode opcode, const char *file, int line)
+template <typename T> void
+rdwr_writeOpcode(T fd, RemotePluginOpcode opcode, const char *file, int line)
 {
     rdwr_tryWrite(fd, &opcode, sizeof(RemotePluginOpcode), file, line);
-}    
+}
 
 template <typename T> void
 rdwr_writeString(T fd, const std::string &str, const char *file, int line)
@@ -222,6 +223,84 @@ rdwr_readMIDIData(T fd, int **frameoffsets, int &events, const char *file, int l
     return buf;
 }
 
+//Deryabin Andrew: vst chunks support
+template <typename T> void
+rdwr_writeRaw(T fd, std::vector<char> rawdata, const char *file, int line)
+{
+    unsigned long complen = compressBound(rawdata.size());
+    char *compressed = new char [complen];
+    if(!compressed)
+    {
+        fprintf(stderr, "Failed to allocate %lu bytes of memory at %s:%d\n", complen, file, line);
+        throw RemotePluginClosedException();
+    }
+
+    std::vector<char>::pointer ptr = &rawdata [0];
+
+    if(compress2((Bytef *)compressed, &complen, (Bytef *)ptr, rawdata.size(), 9) != Z_OK)
+    {
+        delete compressed;
+        fprintf(stderr, "Failed to compress source buffer at %s:%d\n", file, line);
+        throw RemotePluginClosedException();
+    }
+
+    fprintf(stderr, "compressed source buffer. size=%lu bytes\n", complen);
+
+    int len = complen;
+    rdwr_tryWrite(fd, &len, sizeof(int), file, line);
+    len = rawdata.size();
+    rdwr_tryWrite(fd, &len, sizeof(int), file, line);    
+    rdwr_tryWrite(fd, compressed, complen, file, line);
+
+    delete [] compressed;
+}
+
+template <typename T> std::vector<char>
+rdwr_readRaw(T fd, const char *file, int line)
+{
+    int complen, len;
+    static char *rawbuf = 0;
+    static int bufLen = 0;
+    rdwr_tryRead(fd, &complen, sizeof(int), file, line);
+    rdwr_tryRead(fd, &len, sizeof(int), file, line);
+    if (complen > bufLen) {
+    delete rawbuf;
+    rawbuf = new char[complen];
+    bufLen = complen;
+    }
+    rdwr_tryRead(fd, rawbuf, complen, file, line);
+
+    char *uncompressed = new char [len];
+
+    if(!uncompressed)
+    {
+        fprintf(stderr, "Failed to allocate %d bytes of memory at %s:%d\n", len, file, line);
+        throw RemotePluginClosedException();
+    }
+
+    unsigned long destlen = len;
+
+    if(uncompress((Bytef *)uncompressed, &destlen, (Bytef *)rawbuf, complen) != Z_OK)
+    {
+        delete uncompressed;
+        fprintf(stderr, "Failed to uncompress source buffer at %s:%d\n", file, line);
+        throw RemotePluginClosedException();   
+    }
+
+    fprintf(stderr, "uncompressed source buffer. size=%lu bytes, complen=%d\n", destlen, complen);
+
+    std::vector<char> rawout;
+    for(unsigned long i = 0; i < destlen; i++)
+    {
+        rawout.push_back(uncompressed [i]);
+    }
+
+    delete uncompressed;
+
+    return rawout;
+}
+//Deryabin Andrew: vst chunks support: end code
+
 template
 void rdwr_writeOpcode(int fd, RemotePluginOpcode opcode, const char *file, int line);
 template
@@ -238,6 +317,10 @@ template
 float rdwr_readFloat(int fd, const char *file, int line);
 template
 unsigned char *rdwr_readMIDIData(int fd, int **frameoffsets, int &events, const char *file, int line);
+template
+void rdwr_writeRaw(int fd, std::vector<char> rawdata, const char *file, int line);
+template
+std::vector<char> rdwr_readRaw(int fd, const char *file, int line);
 
 template
 void rdwr_writeOpcode(RingBuffer *ringbuf, RemotePluginOpcode opcode, const char *file, int line);
@@ -255,4 +338,7 @@ template
 float rdwr_readFloat(RingBuffer *ringbuf, const char *file, int line);
 template
 unsigned char *rdwr_readMIDIData(RingBuffer *ringbuf, int **frameoffsets, int &events, const char *file, int line);
-
+template
+void rdwr_writeRaw(RingBuffer *ringbuf, std::vector<char> rawdata, const char *file, int line);
+template
+std::vector<char> rdwr_readRaw(RingBuffer *ringbuf, const char *file, int line);

@@ -26,6 +26,9 @@
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
 
+#include <jack/jack.h>
+
+#define VST_FORCE_DEPRECATED 0
 #include "aeffectx.h"
 
 #include "remotepluginserver.h"
@@ -42,6 +45,8 @@
 #else
 #define DEPRECATED_VST_SYMBOL(x) x
 #endif
+
+#define effGetProgramNameIndexed 29
 
 struct Rect {
     short top;
@@ -63,8 +68,12 @@ static int sampleRate = 0;
 static bool guiVisible = false;
 static bool needIdle = false;
 
-static RemotePluginDebugLevel debugLevel = RemotePluginDebugSetup;
+static RemotePluginDebugLevel debugLevel = RemotePluginDebugNone;
 static pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
+
+static jack_client_t* jack_client = 0;
+static int jack_process_callback(jack_nframes_t, void*)
+{ return 0; }
 
 using namespace std;
 
@@ -104,6 +113,11 @@ public:
 
     virtual void         showGUI(std::string);
     virtual void         hideGUI();
+
+    //Deryabin Andrew: vst chunks support
+    virtual std::vector<char> getVSTChunk();
+    virtual bool setVSTChunk(std::vector<char>);
+    //Deryabin Andrew: vst chunks support: end code
 
     virtual void process(float **inputs, float **outputs);
 
@@ -353,7 +367,8 @@ RemoteVSTServer::setParameter(int p, float v)
 
     pthread_mutex_lock(&mutex);
     
-    cerr << "RemoteVSTServer::setParameter (" << p << "," << v << "): " << m_guiEventsExpected << " events expected" << endl;
+    if (debugLevel > 1)
+        cerr << "RemoteVSTServer::setParameter (" << p << "," << v << "): " << m_guiEventsExpected << " events expected" << endl;
     
     if (m_guiFifoFd < 0) {
 	m_guiEventsExpected = 0;
@@ -495,9 +510,7 @@ RemoteVSTServer::sendMIDIData(unsigned char *data, int *frameOffsets, int events
     pthread_mutex_lock(&mutex);
 
     vstev->numEvents = events;
-    if (!m_plugin->dispatcher(m_plugin, effProcessEvents, 0, 0, vstev, 0)) {
-	cerr << "WARNING: " << ix << " MIDI event(s) rejected by plugin" << endl;
-    }
+    m_plugin->dispatcher(m_plugin, effProcessEvents, 0, 0, vstev, 0);
 
     pthread_mutex_unlock(&mutex);
 }
@@ -580,6 +593,39 @@ RemoteVSTServer::hideGUI()
     m_plugin->dispatcher(m_plugin, effEditClose, 0, 0, 0, 0);
     guiVisible = false;
 }
+
+//Deryabin Andrew: vst chunks support
+std::vector<char> RemoteVSTServer::getVSTChunk()
+{
+    cerr << "dssi-vst-server: Getting vst chunk from plugin.." << endl;
+    char * chunkraw = 0;
+    int len = m_plugin->dispatcher(m_plugin, 23, 0, 0, (void **)&chunkraw, 0);
+    std::vector<char> chunk;
+    for(int i = 0; i < len; i++)
+    {
+        chunk.push_back(chunkraw [i]);
+    }
+
+    if (len > 0)
+    {
+        cerr << "Got " << len << " bytes chunk." << endl;
+    }
+
+    return chunk;
+}
+
+bool RemoteVSTServer::setVSTChunk(std::vector<char> chunk)
+{
+    cerr << "dssi-vst-server: Sending vst chunk to plugin. Size=" << chunk.size() << endl;
+    std::vector<char>::pointer ptr = &chunk [0];
+
+    pthread_mutex_lock(&mutex);
+    m_plugin->dispatcher(m_plugin, 24, 0, chunk.size(), (void *)ptr, 0);
+    pthread_mutex_unlock(&mutex);
+
+    return true;
+}
+//Deryabin Andrew: vst chunks support: end code
 
 void
 RemoteVSTServer::startEdit()
@@ -686,17 +732,29 @@ RemoteVSTServer::terminateGUIProcess()
     }
 }
 
-#if VST_2_4_EXTENSIONS
+#if 1 // vestige header
+#define kVstTransportChanged 1
+#define kVstVersion 2400
+struct VstTimeInfo_R {
+    double samplePos, sampleRate, nanoSeconds, ppqPos, tempo, barStartPos, cycleStartPos, cycleEndPos;
+    int32_t timeSigNumerator, timeSigDenominator, smpteOffset, smpteFrameRate, samplesToNextClock, flags;
+};
+intptr_t
+hostCallback(AEffect *plugin, int32_t opcode, int32_t index,
+             intptr_t value, void *ptr, float opt)
+#elif VST_2_4_EXTENSIONS
+typedef VstTimeInfo VstTimeInfo_R;
 VstIntPtr VSTCALLBACK
 hostCallback(AEffect *plugin, VstInt32 opcode, VstInt32 index,
 	     VstIntPtr value, void *ptr, float opt)
 #else
+typedef VstTimeInfo VstTimeInfo_R;
 long VSTCALLBACK
 hostCallback(AEffect *plugin, long opcode, long index,
 	     long value, void *ptr, float opt)
 #endif
 {
-    static VstTimeInfo timeInfo;
+    static VstTimeInfo_R timeInfo;
     int rv = 0;
 
     switch (opcode) {
@@ -720,7 +778,8 @@ hostCallback(AEffect *plugin, long opcode, long index,
 	if (debugLevel > 1)
 	    cerr << "dssi-vst-server[2]: audioMasterAutomate(" << index << "," << v << ")" << endl;
 
-	remoteVSTServerInstance->scheduleGUINotify(index, v);
+	if (remoteVSTServerInstance)
+	    remoteVSTServerInstance->scheduleGUINotify(index, v);
 
 	break;
     }
@@ -728,7 +787,7 @@ hostCallback(AEffect *plugin, long opcode, long index,
     case audioMasterVersion:
 	if (debugLevel > 1)
 	    cerr << "dssi-vst-server[2]: audioMasterVersion requested" << endl;
-	rv = 2300;
+	rv = kVstVersion;
 	break;
 
     case audioMasterCurrentId:
@@ -740,7 +799,8 @@ hostCallback(AEffect *plugin, long opcode, long index,
     case audioMasterIdle:
 	if (debugLevel > 1)
 	    cerr << "dssi-vst-server[2]: audioMasterIdle requested" << endl;
-	plugin->dispatcher(plugin, effEditIdle, 0, 0, 0, 0);
+	if (plugin)
+            plugin->dispatcher(plugin, effEditIdle, 0, 0, 0, 0);
 	break;
 
     case DEPRECATED_VST_SYMBOL(audioMasterPinConnected):
@@ -759,10 +819,55 @@ hostCallback(AEffect *plugin, long opcode, long index,
     case audioMasterGetTime:
 //	if (debugLevel > 1)
 //	    cerr << "dssi-vst-server[2]: audioMasterGetTime requested" << endl;
-	timeInfo.samplePos = currentSamplePosition;
-	timeInfo.sampleRate = sampleRate;
-	timeInfo.flags = 0; // don't mark anything valid except default samplePos/Rate
-	rv = (long)&timeInfo;
+        memset(&timeInfo, 0, sizeof(VstTimeInfo_R));
+        timeInfo.sampleRate = sampleRate;
+        timeInfo.samplePos  = currentSamplePosition;
+
+        if (jack_client)
+        {
+            jack_position_t jack_pos;
+            jack_transport_state_t jack_state;
+
+            jack_state = jack_transport_query(jack_client, &jack_pos);
+
+            if (jack_pos.unique_1 == jack_pos.unique_2)
+            {
+                timeInfo.sampleRate  = jack_pos.frame_rate;
+                timeInfo.samplePos   = jack_pos.frame;
+                timeInfo.nanoSeconds = jack_pos.usecs/1000;
+
+                timeInfo.flags |= kVstTransportChanged;
+                timeInfo.flags |= kVstNanosValid;
+
+                if (jack_state == JackTransportRolling)
+                    timeInfo.flags |= kVstTransportPlaying;
+
+                if (jack_pos.valid & JackPositionBBT)
+                {
+                    double ppqBar  = double(jack_pos.bar - 1) * jack_pos.beats_per_bar;
+                    double ppqBeat = double(jack_pos.beat - 1);
+                    double ppqTick = double(jack_pos.tick) / jack_pos.ticks_per_beat;
+
+                    // PPQ Pos
+                    timeInfo.ppqPos = ppqBar + ppqBeat + ppqTick;
+                    timeInfo.flags |= kVstPpqPosValid;
+
+                    // Tempo
+                    timeInfo.tempo  = jack_pos.beats_per_minute;
+                    timeInfo.flags |= kVstTempoValid;
+
+                    // Bars
+                    timeInfo.barStartPos = ppqBar;
+                    timeInfo.flags |= kVstBarsValid;
+
+                    // Time Signature
+                    timeInfo.timeSigNumerator   = jack_pos.beats_per_bar;
+                    timeInfo.timeSigDenominator = jack_pos.beat_type;
+                    timeInfo.flags |= kVstTimeSigValid;
+                }
+            }
+        }
+	rv = (intptr_t)&timeInfo;
 	break;
 
     case audioMasterProcessEvents:
@@ -830,6 +935,7 @@ hostCallback(AEffect *plugin, long opcode, long index,
 	}
 	plugin->dispatcher(plugin, effSetSampleRate,
 			   0, 0, NULL, (float)sampleRate);
+        rv = sampleRate;
 	break;
 
     case audioMasterGetBlockSize:
@@ -840,6 +946,7 @@ hostCallback(AEffect *plugin, long opcode, long index,
 	}
 	plugin->dispatcher(plugin, effSetBlockSize,
 			   0, bufferSize, NULL, 0);
+        rv = bufferSize;
 	break;
 
     case audioMasterGetInputLatency:
@@ -930,7 +1037,7 @@ hostCallback(AEffect *plugin, long opcode, long index,
     case audioMasterGetProductString:
 	if (debugLevel > 1)
 	    cerr << "dssi-vst-server[2]: audioMasterGetProductString requested" << endl;
-	strcpy((char *)ptr, "DSSI VST Wrapper Plugin");
+	strcpy((char *)ptr, "DSSI-VST Plugin");
 	break;
 
     case audioMasterGetVendorVersion:
@@ -953,11 +1060,13 @@ hostCallback(AEffect *plugin, long opcode, long index,
 	if (debugLevel > 1)
 	    cerr << "dssi-vst-server[2]: audioMasterCanDo(" << (char *)ptr
 		 << ") requested" << endl;
-	if (!strcmp((char*)ptr, "sendVstEvents") ||
-	    !strcmp((char*)ptr, "sendVstMidiEvent") ||
-	    !strcmp((char*)ptr, "sendVstTimeInfo") ||
-	    !strcmp((char*)ptr, "sizeWindow") /* ||
-	    !strcmp((char*)ptr, "supplyIdle") */) {
+        if (!strcmp((char*)ptr, "sendVstEvents") ||
+            !strcmp((char*)ptr, "sendVstMidiEvent") ||
+            !strcmp((char*)ptr, "sendVstTimeInfo") ||
+            !strcmp((char*)ptr, "sizeWindow") ||
+            !strcmp((char*)ptr, "supplyIdle") ||
+            !strcmp((char*)ptr, "receiveVstEvents") ||
+            !strcmp((char*)ptr, "receiveVstMidiEvent")) {
 	    rv = 1;
 	}
 	break;
@@ -986,8 +1095,8 @@ hostCallback(AEffect *plugin, long opcode, long index,
     case audioMasterUpdateDisplay:
 	if (debugLevel > 1)
 	    cerr << "dssi-vst-server[2]: audioMasterUpdateDisplay requested" << endl;
-	plugin->dispatcher(plugin, effEditIdle,
-			   0, 0, NULL, 0);
+	if (plugin)
+            plugin->dispatcher(plugin, effEditIdle, 0, 0, NULL, 0);
 	break;
 
     case audioMasterBeginEdit:
@@ -1125,10 +1234,10 @@ LRESULT WINAPI
 MainProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 {
     switch (msg) {
-    case WM_DESTROY:
+    case WM_CLOSE:
 	remoteVSTServerInstance->terminateGUIProcess();
-	guiVisible = false;
-	return 0;
+        remoteVSTServerInstance->hideGUI();
+        return TRUE;
     }
 
     return DefWindowProc(hWnd, msg, wParam, lParam);
@@ -1413,6 +1522,15 @@ WinMain(HINSTANCE hInst, HINSTANCE hPrevInst, LPSTR cmdline, int cmdshow)
 	return 1;
     }
 
+    // create dummy jack client for transport info
+    jack_client = jack_client_open("dssi-vst", JackNoStartServer, 0);
+
+    if (jack_client)
+    {
+        jack_set_process_callback(jack_client, jack_process_callback, 0);
+        jack_activate(jack_client);
+    }
+
     HWND window;
     if ((window = CreateWindowExA
 	 (0, "dssi-vst", "dummy",
@@ -1478,6 +1596,12 @@ WinMain(HINSTANCE hInst, HINSTANCE hPrevInst, LPSTR cmdline, int cmdshow)
 
     if (debugLevel > 0) {
 	cerr << "dssi-vst-server[1]: cleaning up" << endl;
+    }
+
+    if (jack_client)
+    {
+        jack_deactivate(jack_client);
+        jack_client_close(jack_client);
     }
 
     CloseHandle(audioThreadHandle);

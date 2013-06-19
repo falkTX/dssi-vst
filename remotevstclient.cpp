@@ -55,7 +55,7 @@ RemoteVSTClient::RemoteVSTClient(std::string dllName, bool showGUI) :
 	closedir(directory);
 
 	struct stat st;
-	std::string fileName = subDir + "/dssi-vst-server";
+	std::string fileName = subDir + "/dssi-vst-server.exe";
 
 	if (stat(fileName.c_str(), &st)) {
 	    continue;
@@ -74,14 +74,14 @@ RemoteVSTClient::RemoteVSTClient(std::string dllName, bool showGUI) :
 	std::cerr << "RemoteVSTClient: executing "
 		  << fileName << " " << argStr << std::endl;
 
-	const char* fileNameStr = fileName.c_str();
-	if ((child = vfork()) < 0) {
+        const char* fileNameStr = fileName.c_str();
+        if ((child = vfork()) < 0) {
 	    cleanup();
 	    throw((std::string)"Fork failed");
 	} else if (child == 0) { // child process
 	    if (execlp(fileNameStr, fileNameStr, argStr, NULL)) {
-		// vfork() docs say you shouldn't call a function here,
-		// but it seems to work for me.
+                // vfork() docs say you shouldn't call a function here,
+                // but it seems to work for me.
 		perror("Exec failed");
 		_exit(1);
 	    }
@@ -92,7 +92,7 @@ RemoteVSTClient::RemoteVSTClient(std::string dllName, bool showGUI) :
 
     if (!found) {
 	cleanup();
-	throw((std::string)"Failed to find dssi-vst-server executable");
+	throw((std::string)"Failed to find dssi-vst-server.exe");
     } else {
 	syncStartup();
     }
@@ -136,7 +136,11 @@ RemoteVSTClient::addFromFd(int fd, PluginRecord &rec)
 //	    std::cerr << rec.parameters << " parameters" << std::endl;
     
     for (int i = 0; i < rec.parameters; ++i) {
-	tryRead(fd, buffer, 64);
+        try {
+            tryRead(fd, buffer, 64);
+        } catch (RemotePluginClosedException) {
+            return false; // plugin check failed
+        }
 	rec.parameterNames.push_back(std::string(buffer));
 	float f;
 	tryRead(fd, &f, sizeof(float));
@@ -321,7 +325,7 @@ RemoteVSTClient::queryPlugins(std::vector<PluginRecord> &plugins)
 	closedir(directory);
 
 	struct stat st;
-	std::string fileName = subDir + "/dssi-vst-scanner";
+	std::string fileName = subDir + "/dssi-vst-scanner.exe";
 
 	if (stat(fileName.c_str(), &st)) {
 	    continue;
@@ -356,7 +360,7 @@ RemoteVSTClient::queryPlugins(std::vector<PluginRecord> &plugins)
 
     if (!found) {
 	unlink(fifoFile);
-	throw((std::string)"Failed to find dssi-vst-scanner executable");
+	throw((std::string)"Failed to find dssi-vst-scanner.exe");
     }
 
     struct pollfd pfd;

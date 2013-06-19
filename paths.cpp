@@ -64,7 +64,7 @@ int shm_mkstemp(char *fileBase)
 
     while (1) {
         for (int c = size - 6; c < size; c++) {
-	    // Note the -1 to avoid the trailing '\0' in charSet.
+            // Note the -1 to avoid the trailing '\0' in charSet.
             fileBase[c] = charSet[rand() % (sizeof(charSet) - 1)];
         }
         int fd = shm_open(fileBase, O_RDWR | O_CREAT | O_EXCL, 0600);

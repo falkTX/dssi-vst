@@ -11,6 +11,7 @@
 #include "remoteplugin.h"
 #include "rdwrops.h"
 #include <string>
+#include <vector>
 
 class RemotePluginServer
 {
@@ -57,6 +58,11 @@ public:
 
     virtual void         showGUI(std::string guiData) { } 
     virtual void         hideGUI() { }
+
+    //Deryabin Andrew: vst chunks support
+    virtual std::vector<char> getVSTChunk() = 0;
+    virtual bool setVSTChunk(std::vector<char>) = 0;
+    //Deryabin Andrew: vst chunks support: end code
 
     void dispatchControl(int timeout = -1); // may throw RemotePluginClosedException
     void dispatchProcess(int timeout = -1); // may throw RemotePluginClosedException

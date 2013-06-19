@@ -9,8 +9,8 @@
 #include "remotevstclient.h"
 #include "rdwrops.h"
 
-#include <ladspa.h>
-#include <dssi.h>
+#include "dssi/ladspa.h"
+#include "dssi/dssi.h"
 #include <alsa/seq_event.h>
 #include <alsa/seq_midi_event.h>
 #include <dirent.h>
@@ -66,7 +66,7 @@ protected:
 
     LADSPA_Data               *m_latencyOut;
 
-    DSSI_Program_Descriptor  **m_programs;
+    DSSI_Program_Descriptor   *m_programs;
     unsigned long              m_programCount;
 
     unsigned char              m_decodeBuffer[MIDI_BUFFER_SIZE];
@@ -77,6 +77,11 @@ protected:
 
     RemotePluginClient        *m_plugin;
     bool                       m_ok;
+
+    //Andrew Deryabin: VST chunks support
+    char *m_chunkdata;
+    friend class DSSIVSTPlugin;
+    //Andrew Deryabin: VST chunks support: end code
 };
 
 class DSSIVSTPlugin
@@ -119,6 +124,9 @@ public:
     static char *configure(LADSPA_Handle instance, const char *key,
 			   const char *value);
 
+    static int set_custom_data(LADSPA_Handle Instance, void *Data, unsigned long DataLength);
+    static int get_custom_data(LADSPA_Handle Instance, void **Data, unsigned long *DataLength);
+
 private:
     typedef std::pair<std::string, DSSI_Descriptor *> PluginPair;
     typedef std::vector<PluginPair> PluginList;
@@ -144,48 +152,13 @@ DSSIVSTPluginInstance::DSSIVSTPluginInstance(std::string dllName,
     m_alsaDecoder(0),
     m_pendingProgram(false),
     m_plugin(0),
-    m_ok(false)
+    m_ok(false),
+    m_chunkdata(0)
 {
     std::cerr << "DSSIVSTPluginInstance::DSSIVSTPluginInstance(" << dllName << ")" << std::endl;
 
     try {
 	m_plugin = new RemoteVSTClient(dllName);
-
-	m_controlPortCount = m_plugin->getParameterCount();
-	m_controlPorts = new LADSPA_Data*[m_controlPortCount];
-	m_controlPortsSaved = new LADSPA_Data[m_controlPortCount];
-
-	for (unsigned long i = 0; i < m_controlPortCount; ++i) {
-	    m_controlPortsSaved[i] = NO_CONTROL_DATA;
-	}
-	
-	m_audioInCount = m_plugin->getInputCount();
-	m_audioIns = new LADSPA_Data*[m_audioInCount];
-
-	m_audioOutCount = m_plugin->getOutputCount();
-	m_audioOuts = new LADSPA_Data*[m_audioOutCount];
-
-	m_programCount = m_plugin->getProgramCount();
-	m_programs = new DSSI_Program_Descriptor*[m_programCount];
-	for (unsigned long i = 0; i < m_programCount; ++i) {
-	    m_programs[i] = new DSSI_Program_Descriptor;
-	    m_programs[i]->Bank = 0;
-	    m_programs[i]->Program = i;
-	    m_programs[i]->Name = strdup(m_plugin->getProgramName(i).c_str());
-	}
-
-	snd_midi_event_new(MIDI_BUFFER_SIZE, &m_alsaDecoder);
-	if (!m_alsaDecoder) {
-	    std::cerr << "DSSIVSTPluginInstance::DSSIVSTPluginInstance("
-		      << dllName << "): failed to initialize ALSA MIDI decoder"
-		      << std::endl;
-	} else {
-	    snd_midi_event_no_status(m_alsaDecoder, 1);
-	}
-
-	std::cerr << "DSSIVSTPluginInstance(" << this << "): setting OK true" << std::endl;
-
-	m_ok = true;
 
     } catch (RemotePluginClosedException) {
 	std::cerr << "DSSIVSTPluginInstance::DSSIVSTPluginInstance("
@@ -193,10 +166,7 @@ DSSIVSTPluginInstance::DSSIVSTPluginInstance(std::string dllName,
 
 	m_ok = false;
 	delete m_plugin; m_plugin = 0;
-	delete m_controlPorts; m_controlPorts = 0;
-	delete m_controlPortsSaved; m_controlPortsSaved = 0;
-	delete m_audioIns; m_audioIns = 0;
-	delete m_audioOuts; m_audioOuts = 0;
+	return;
 
     } catch (std::string message) {
 	std::cerr << "DSSIVSTPluginInstance::DSSIVSTPluginInstance("
@@ -204,12 +174,41 @@ DSSIVSTPluginInstance::DSSIVSTPluginInstance(std::string dllName,
 	
 	m_ok = false;
 	delete m_plugin; m_plugin = 0;
-	delete m_controlPorts; m_controlPorts = 0;
-	delete m_controlPortsSaved; m_controlPortsSaved = 0;
-	delete m_audioIns; m_audioIns = 0;
-	delete m_audioOuts; m_audioOuts = 0;
+	return;
     }
 
+    m_controlPortCount = m_plugin->getParameterCount();
+    m_controlPorts = new LADSPA_Data*[m_controlPortCount];
+    m_controlPortsSaved = new LADSPA_Data[m_controlPortCount];
+
+    for (unsigned long i = 0; i < m_controlPortCount; ++i) {
+	m_controlPortsSaved[i] = NO_CONTROL_DATA;
+    }
+
+    m_audioInCount = m_plugin->getInputCount();
+    m_audioIns = new LADSPA_Data*[m_audioInCount];
+
+    m_audioOutCount = m_plugin->getOutputCount();
+    m_audioOuts = new LADSPA_Data*[m_audioOutCount];
+
+    m_programCount = m_plugin->getProgramCount();
+    m_programs = new DSSI_Program_Descriptor[m_programCount];
+    for (unsigned long i = 0; i < m_programCount; ++i) {
+	m_programs[i].Bank = 0;
+	m_programs[i].Program = i;
+	m_programs[i].Name = strdup(m_plugin->getProgramName(i).c_str());
+    }
+
+    snd_midi_event_new(MIDI_BUFFER_SIZE, &m_alsaDecoder);
+    if (!m_alsaDecoder) {
+	std::cerr << "DSSIVSTPluginInstance::DSSIVSTPluginInstance("
+		  << dllName << "): failed to initialize ALSA MIDI decoder"
+		  << std::endl;
+    } else {
+	snd_midi_event_no_status(m_alsaDecoder, 1);
+    }
+
+    m_ok = true;
     std::cerr << "DSSIVSTPluginInstance::DSSIVSTPluginInstance(" << dllName << ") construction complete" << std::endl;
 }
 
@@ -224,22 +223,26 @@ DSSIVSTPluginInstance::~DSSIVSTPluginInstance()
 	} catch (RemotePluginClosedException) { }
     }
 
+    if (!m_plugin) {
+	return;
+    }
+
     delete m_plugin;
+    delete m_chunkdata;
 
     if (m_alsaDecoder) {
 	snd_midi_event_free(m_alsaDecoder);
     }
 
-    delete m_controlPorts;
-    delete m_controlPortsSaved;
-    delete m_audioIns;
-    delete m_audioOuts;
+    delete[] m_controlPorts;
+    delete[] m_controlPortsSaved;
+    delete[] m_audioIns;
+    delete[] m_audioOuts;
 
     for (unsigned long i = 0; i < m_programCount; ++i) {
-	free((void *)m_programs[i]->Name);
-	delete m_programs[i];
+	free((void *)m_programs[i].Name);
     }
-    delete m_programs;
+    delete[] m_programs;
 }
 
 void
@@ -306,8 +309,7 @@ const DSSI_Program_Descriptor *
 DSSIVSTPluginInstance::getProgram(unsigned long index)
 {
     if (index >= m_programCount) return 0;
-    m_programs[index]->Name = strdup(m_programs[index]->Name); // host frees
-    return m_programs[index];
+    return &m_programs[index];
 }
 
 void
@@ -573,6 +575,11 @@ DSSIVSTPlugin::DSSIVSTPlugin()
 	descriptor->select_program = DSSIVSTPlugin::select_program;
 	descriptor->get_midi_controller_for_port = 0;
 
+       //Andrew Deryabin: VST chunks support
+       descriptor->set_custom_data = DSSIVSTPlugin::set_custom_data;
+       descriptor->get_custom_data = DSSIVSTPlugin::get_custom_data;
+       //Andrew Deryabin: VST chunks support: end code
+
 	if (rec.isSynth) {
 	    descriptor->run_synth = DSSIVSTPlugin::run_synth;
 	} else {
@@ -715,6 +722,7 @@ _makeLADSPADescriptorMap()
     }
 }
 
+extern "C" __attribute__ ((visibility("default")))
 const LADSPA_Descriptor *
 ladspa_descriptor(unsigned long index)
 {
@@ -731,6 +739,7 @@ ladspa_descriptor(unsigned long index)
     return 0;
 }
 
+extern "C" __attribute__ ((visibility("default")))
 const DSSI_Descriptor *
 dssi_descriptor(unsigned long index)
 {
@@ -741,3 +750,35 @@ dssi_descriptor(unsigned long index)
     return _plugin->queryDescriptor(index);
 }
 
+//Andrew Deryabin: VST chunks support
+int DSSIVSTPlugin::set_custom_data(LADSPA_Handle Instance, void *Data, unsigned long  DataLength)
+{
+    DSSIVSTPluginInstance *instance = ((DSSIVSTPluginInstance *)Instance);
+    if(DataLength == 0 || Data == 0)
+        return 0;
+    std::vector<char> chunk;
+    for(unsigned long i = 0; i < DataLength; i++)
+        chunk.push_back(((char *)Data) [i]);
+    instance->m_plugin->setVSTChunk(chunk);
+    return 1;
+}
+
+int DSSIVSTPlugin::get_custom_data(LADSPA_Handle Instance, void **Data, unsigned long  *DataLength)
+{
+    DSSIVSTPluginInstance *instance = ((DSSIVSTPluginInstance *)Instance);
+    std::vector<char> chunk = instance->m_plugin->getVSTChunk();
+    unsigned long chunksize = chunk.size();
+    instance->m_chunkdata = new char [chunksize];
+    if(instance->m_chunkdata)
+    {
+        std::vector<char>::pointer ptr = &chunk [0];
+        memcpy(instance->m_chunkdata, ptr, chunksize);
+        *Data = instance->m_chunkdata;
+        *DataLength = chunksize;
+        return 1;
+    }
+    *Data = 0;
+    *DataLength = 0;
+    return 0;
+}
+//Andrew Deryabin: VST chunks support: end code

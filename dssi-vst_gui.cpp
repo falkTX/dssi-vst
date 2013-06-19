@@ -134,7 +134,8 @@ control_handler(const char *path, const char *types, lo_arg **argv,
 		int argc, void *data, void *user_data)
 {
     static int count = 0;
-    cerr << "dssi-vst_gui: control_handler " << count++ << endl;
+    count++;
+    //cerr << "dssi-vst_gui: control_handler " << count++ << endl;
     return 0;
 }
 
@@ -295,9 +296,14 @@ main(int argc, char **argv)
 	cerr << "dssi-vst_gui[1]: exiting" << endl;
     }
 
+    free(hosthostname);
+    free(hostport);
+    free(hostpath);
+    lo_address_free(hostaddr);
+    lo_server_free(oscserver);
+
     close(fifoFd);
     unlink(fifoFile);
 
     return 0;
 }
-

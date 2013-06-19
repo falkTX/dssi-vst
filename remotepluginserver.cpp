@@ -59,7 +59,7 @@ RemotePluginServer::RemotePluginServer(std::string fileIdentifiers) :
 	cleanup();
 	throw((std::string)"Failed to open FIFO");
     }
-    
+
     bool b = false;
 
     sprintf(tmpFileBase, "/dssi-vst-rplugin_shc_%s",
@@ -68,7 +68,7 @@ RemotePluginServer::RemotePluginServer(std::string fileIdentifiers) :
 
     m_shmControlFd = shm_open(m_shmControlFileName, O_RDWR, 0);
     if (m_shmControlFd < 0) {
-	tryWrite(m_controlResponseFd, &b, sizeof(bool));
+        tryWrite(m_controlResponseFd, &b, sizeof(bool));
 	cleanup();
 	throw((std::string)"Failed to open or create shared memory file");
     }
@@ -79,10 +79,16 @@ RemotePluginServer::RemotePluginServer(std::string fileIdentifiers) :
 	throw((std::string)"Failed to mmap shared memory file");
     }
 
+    m_shmControl = static_cast<ShmControl *>(mmap(0, sizeof(ShmControl), PROT_READ | PROT_WRITE, MAP_SHARED, m_shmControlFd, 0));
+    if (!m_shmControl) {
+        tryWrite(m_controlResponseFd, &b, sizeof(bool));
+        cleanup();
+        throw((std::string)"Failed to mmap shared memory file");
+    }
+
     sprintf(tmpFileBase, "/dssi-vst-rplugin_shm_%s",
 	    fileIdentifiers.substr(18, 6).c_str());
     m_shmFileName = strdup(tmpFileBase);
-
 
     if ((m_shmFd = shm_open(m_shmFileName, O_RDWR, 0)) < 0) {
 	tryWrite(m_controlResponseFd, &b, sizeof(bool));
@@ -107,8 +113,8 @@ RemotePluginServer::cleanup()
 	m_shm = 0;
     }
     if (m_shmControl) {
-	munmap(m_shmControl, sizeof(ShmControl));
-	m_shmControl = 0;
+        munmap(m_shmControl, sizeof(ShmControl));
+        m_shmControl = 0;
     }
     if (m_controlRequestFd >= 0) {
 	close(m_controlRequestFd);
@@ -123,8 +129,8 @@ RemotePluginServer::cleanup()
 	m_shmFd = -1;
     }
     if (m_shmControlFd >= 0) {
-	close(m_shmControlFd);
-	m_shmControlFd = -1;
+        close(m_shmControlFd);
+        m_shmControlFd = -1;
     }
     if (m_controlRequestFileName) {
 	free(m_controlRequestFileName);
@@ -139,10 +145,10 @@ RemotePluginServer::cleanup()
 	m_shmFileName = 0;
     }
     if (m_shmControlFileName) {
-	free(m_shmControlFileName);
-	m_shmControlFileName = 0;
+        free(m_shmControlFileName);
+        m_shmControlFileName = 0;
     }
-    
+
     delete m_inputs;
     m_inputs = 0;
 
@@ -211,24 +217,24 @@ RemotePluginServer::dispatchProcess(int timeout)
     ts_timeout.tv_sec += seconds;
     ts_timeout.tv_nsec += (timeout - seconds * 1000) * 1000000;
     if (ts_timeout.tv_nsec >= 1000000000) {
-	ts_timeout.tv_nsec -= 1000000000;
-	ts_timeout.tv_sec++;
+        ts_timeout.tv_nsec -= 1000000000;
+        ts_timeout.tv_sec++;
     }
 
     if (sem_timedwait(&m_shmControl->runServer, &ts_timeout)) {
-	if (errno == ETIMEDOUT) {
-	    return;
-	} else {
-	    throw RemotePluginClosedException();
-	}
+        if (errno == ETIMEDOUT) {
+            return;
+        } else {
+            throw RemotePluginClosedException();
+        }
     }
 
     while (dataAvailable(&m_shmControl->ringBuffer)) {
-	dispatchProcessEvents();
+        dispatchProcessEvents();
     }
 
     if (sem_post(&m_shmControl->runClient)) {
-	std::cerr << "Could not post to semaphore\n";
+        std::cerr << "Could not post to semaphore\n";
     }
 }
 
@@ -284,8 +290,8 @@ RemotePluginServer::dispatchProcessEvents()
 	
     case RemotePluginSetParameter:
     {
-	int pn(readInt(&m_shmControl->ringBuffer));
-	setParameter(pn, readFloat(&m_shmControl->ringBuffer));
+        int pn(readInt(&m_shmControl->ringBuffer));
+        setParameter(pn, readFloat(&m_shmControl->ringBuffer));
 	break;
     }
 
@@ -439,12 +445,32 @@ RemotePluginServer::dispatchControlEvents()
 	break;
     }
 
+    //Deryabin Andrew: vst chunks support
+    case RemotePluginGetVSTChunk:
+    {
+        std::vector<char> chunk = getVSTChunk();
+        writeRaw(m_controlResponseFd, chunk);
+        break;
+    }
+
+    case RemotePluginSetVSTChunk:
+    {
+        std::vector<char> chunk = readRaw(m_controlRequestFd);
+        setVSTChunk(chunk);
+        break;
+    }
+    //Deryabin Andrew: vst chunks support: end code
+
     case RemotePluginNoOpcode:
 	break;
 
     case RemotePluginReset:
 	reset();
 	break;
+
+    case RemotePluginReset:
+        reset();
+        break;
 
     default:
 	std::cerr << "WARNING: RemotePluginServer::dispatchControlEvents: unexpected opcode "
