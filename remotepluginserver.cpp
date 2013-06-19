@@ -74,12 +74,6 @@ RemotePluginServer::RemotePluginServer(std::string fileIdentifiers) :
 	cleanup();
 	throw((std::string)"Failed to open or create shared memory file");
     }
-    m_shmControl = static_cast<ShmControl *>(mmap(0, sizeof(ShmControl), PROT_READ | PROT_WRITE, MAP_SHARED, m_shmControlFd, 0));
-    if (!m_shmControl) {
-	tryWrite(m_controlResponseFd, &b, sizeof(bool));
-	cleanup();
-	throw((std::string)"Failed to mmap shared memory file");
-    }
 
     m_shmControl = static_cast<ShmControl *>(mmap(0, sizeof(ShmControl), PROT_READ | PROT_WRITE, MAP_SHARED, m_shmControlFd, 0));
     if (!m_shmControl) {
@@ -469,10 +463,6 @@ RemotePluginServer::dispatchControlEvents()
     case RemotePluginReset:
 	reset();
 	break;
-
-    case RemotePluginReset:
-        reset();
-        break;
 
     default:
 	std::cerr << "WARNING: RemotePluginServer::dispatchControlEvents: unexpected opcode "

@@ -152,8 +152,6 @@ bool dataAvailable(RingBuffer *ringbuf)
 
 template <typename T> void
 rdwr_writeOpcode(T fd, RemotePluginOpcode opcode, const char *file, int line)
-template <typename T> void
-rdwr_writeOpcode(T fd, RemotePluginOpcode opcode, const char *file, int line)
 {
     rdwr_tryWrite(fd, &opcode, sizeof(RemotePluginOpcode), file, line);
 }

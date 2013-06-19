@@ -23,6 +23,8 @@
 #include <cstdio>
 #include <string.h>
 
+#include "rdwrops.h"
+
 RemotePluginClient::RemotePluginClient() :
     m_controlRequestFd(-1),
     m_controlResponseFd(-1),
@@ -84,7 +86,6 @@ RemotePluginClient::RemotePluginClient() :
         cleanup();
         throw((std::string)"Failed to mmap shared memory file");
     }
-    memset(m_shmControl, 0, sizeof(ShmControl));
 
     memset(m_shmControl, 0, sizeof(ShmControl));
     if (sem_init(&m_shmControl->runServer, 1, 0)) {
@@ -475,19 +476,6 @@ RemotePluginClient::waitForServer()
     ts_timeout.tv_sec += 5;
     if (sem_timedwait(&m_shmControl->runClient, &ts_timeout) != 0) {
 	throw RemotePluginClosedException();
-    }
-}
-
-void
-RemotePluginClient::waitForServer()
-{
-    sem_post(&m_shmControl->runServer);
-
-    timespec ts_timeout;
-    clock_gettime(CLOCK_REALTIME, &ts_timeout);
-    ts_timeout.tv_sec += 5;
-    if (sem_timedwait(&m_shmControl->runClient, &ts_timeout) != 0) {
-        throw RemotePluginClosedException();
     }
 }
 
