@@ -7,6 +7,7 @@
 */
 
 #include "remotevstclient.h"
+#include "rdwrops.h"
 
 #include <ladspa.h>
 #include <dssi.h>
@@ -20,9 +21,6 @@
 #include <iostream>
 #include <string.h>
 #include <stdlib.h>
-
-// Should be divisible by three
-#define MIDI_BUFFER_SIZE 1023
 
 class DSSIVSTPluginInstance
 {
@@ -341,7 +339,6 @@ DSSIVSTPluginInstance::run(unsigned long sampleCount)
 	if (sampleCount != m_lastSampleCount) {
 	    m_plugin->setBufferSize(sampleCount);
 	    m_lastSampleCount = sampleCount;
-	    if (m_latencyOut) *m_latencyOut = sampleCount;
 	}
 	
 	int modifiedCount = 0;
@@ -496,7 +493,7 @@ DSSIVSTPlugin::DSSIVSTPlugin()
 
 	ldesc->UniqueID = 6666 + p;
 	ldesc->Label = label;
-	ldesc->Properties = 0;
+	ldesc->Properties = LADSPA_PROPERTY_HARD_RT_CAPABLE;
 	ldesc->Name = strdup(std::string(rec.pluginName + " VST").c_str());
 	ldesc->Maker = strdup(rec.vendorName.c_str());
 	ldesc->Copyright = strdup(ldesc->Maker);

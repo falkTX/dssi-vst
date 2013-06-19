@@ -23,7 +23,6 @@
 static RemotePluginClient *plugin = 0;
 
 #define MIDI_DECODED_SIZE 3
-#define MIDI_BUFFER_SIZE 3072
 
 static unsigned char midiStreamBuffer[(MIDI_BUFFER_SIZE + 1) * MIDI_DECODED_SIZE];
 static struct timeval midiTimeBuffer[MIDI_BUFFER_SIZE];
@@ -142,6 +141,13 @@ alsaSeqCallback(snd_seq_t *alsaSeqHandle)
 			ev->type);
 		continue;
 	    }
+
+            if (ev->type == SND_SEQ_EVENT_PGMCHANGE) {
+                pthread_mutex_lock(&pluginMutex);
+                plugin->setCurrentProgram(ev->data.control.value);
+                pthread_mutex_unlock(&pluginMutex);
+                continue;
+            }
 
 	    if (midiReadIndex == midiWriteIndex + 1) {
 		fprintf(stderr, "WARNING: MIDI stream buffer overflow\n");

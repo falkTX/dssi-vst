@@ -20,4 +20,6 @@ public:
 					    std::string defltHomeRelPath);
 };
 
+int shm_mkstemp(char *fileBase);
+
 #endif
