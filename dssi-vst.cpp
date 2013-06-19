@@ -497,7 +497,7 @@ DSSIVSTPlugin::DSSIVSTPlugin()
 
 	ldesc->UniqueID = 6666 + p;
 	ldesc->Label = label;
-	ldesc->Properties = LADSPA_PROPERTY_HARD_RT_CAPABLE;
+	ldesc->Properties = LADSPA_PROPERTY_REALTIME|LADSPA_PROPERTY_HARD_RT_CAPABLE;
 	ldesc->Name = strdup(std::string(rec.pluginName + " VST").c_str());
 	ldesc->Maker = strdup(rec.vendorName.c_str());
 	ldesc->Copyright = strdup(ldesc->Maker);
