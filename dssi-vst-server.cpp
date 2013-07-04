@@ -387,7 +387,7 @@ RemoteVSTServer::setParameter(int p, float v)
 	    m_guiEventsExpected = 0;
 	} else {
 	    --m_guiEventsExpected;
-	    cerr << "Reduced to " << m_guiEventsExpected << endl;
+	    //cerr << "Reduced to " << m_guiEventsExpected << endl;
 	    pthread_mutex_unlock(&mutex);
 	    return;
 	}

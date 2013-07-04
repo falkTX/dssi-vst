@@ -144,7 +144,7 @@ control_handler(const char *path, const char *types, lo_arg **argv,
 void
 readFromPlugin()
 {
-    cerr << "dssi-vst_gui: something to read from plugin" << endl;
+    //cerr << "dssi-vst_gui: something to read from plugin" << endl;
 
     try {
 	RemotePluginOpcode opcode = RemotePluginNoOpcode;
@@ -161,7 +161,7 @@ readFromPlugin()
 	    int port = readInt(fifoFd);
 	    float value = readFloat(fifoFd);
 
-	    cerr << "dssi-vst_gui: sending (" << port << "," << value << ") to host" << endl;
+	    //cerr << "dssi-vst_gui: sending (" << port << "," << value << ") to host" << endl;
 
 	    lo_send(hostaddr,
 		    (std::string(hostpath) + "/control").c_str(),
