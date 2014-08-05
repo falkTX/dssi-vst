@@ -434,6 +434,8 @@ DSSIVSTPluginInstance::configure(std::string key, std::string value)
 		std::cerr << "DSSIVSTPluginInstance::configure: hide gui" << std::endl;
 		m_plugin->hideGUI();
 	    }
+	} else if (key == "DSSI_CUSTOMDATA_EXTENSION_KEY") {
+	    return "true";
 	}
     } catch (RemotePluginClosedException) {
 	m_ok = false;
