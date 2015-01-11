@@ -391,6 +391,7 @@ openJack(const char * pluginName, bool unique)
 	    jackData.input_ports[i] = jack_port_register
 		(jackData.client, portName,
 		 JACK_DEFAULT_AUDIO_TYPE, JackPortIsInput, 0);
+            fprintf(stderr, "JACK input port: %s\n", portName);
 	}
 
     } else {
@@ -409,6 +410,7 @@ openJack(const char * pluginName, bool unique)
 	    jackData.output_ports[i] = jack_port_register
 		(jackData.client, portName,
 		 JACK_DEFAULT_AUDIO_TYPE, JackPortIsOutput, 0);
+            fprintf(stderr, "JACK output port: %s\n", portName);
 	}
 
     } else {
