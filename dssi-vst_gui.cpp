@@ -44,6 +44,8 @@ static char *hostpath = 0;
 static char *fifoFile = 0;
 static int fifoFd = -1;
 
+static char *friendlyname = 0;
+
 using std::cout;
 using std::cerr;
 using std::endl;
@@ -98,11 +100,13 @@ show_handler(const char *path, const char *types, lo_arg **argv,
 {
     cerr << "dssi-vst_gui: show_handler" << endl;
 
+    std::string value = std::string(fifoFile) + friendlyname;
+
     lo_send(hostaddr,
 	    (std::string(hostpath) + "/configure").c_str(),
 	    "ss",
 	    "guiVisible",
-	    fifoFile);
+	    value.c_str());
 
     return 0;
 }
@@ -193,7 +197,6 @@ main(int argc, char **argv)
 
     char *pluginlibname = 0;
     char *label = 0;
-    char *friendlyname = 0;
 
     if (argc != 5) {
 	cerr << "Usage: dssi-vst_gui <osc url> <plugin.so> <label> <friendlyname>" << endl;

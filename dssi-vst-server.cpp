@@ -533,14 +533,17 @@ RemoteVSTServer::showGUI(std::string guiData)
 
     if (guiVisible) return;
 
-    if (guiData != m_guiFifoFile || m_guiFifoFd < 0) {
+    const std::string guiTitle = guiData.substr(23, guiData.length());
+    const std::string guiFifoFile = guiData.erase(23, std::string::npos);
+
+    if (guiFifoFile != m_guiFifoFile || m_guiFifoFd < 0) {
 
 	if (m_guiFifoFd >= 0) {
 	    close(m_guiFifoFd);
 	    m_guiFifoFd = -1;
 	}
 
-	m_guiFifoFile = guiData;
+	m_guiFifoFile = guiFifoFile;
 
 	if ((m_guiFifoFd = open(m_guiFifoFile.c_str(), O_WRONLY | O_NONBLOCK)) < 0) {
 	    perror(m_guiFifoFile.c_str());
@@ -571,6 +574,7 @@ RemoteVSTServer::showGUI(std::string guiData)
 	    cerr << "dssi-vst-server[1]: sized window" << endl;
 	}
 
+	SetWindowTextA(hWnd, guiTitle.c_str());
 	ShowWindow(hWnd, SW_SHOWNORMAL);
 	UpdateWindow(hWnd);
 	guiVisible = true;
