@@ -207,30 +207,18 @@ RemotePluginServer::dispatchControl(int timeout)
 void
 RemotePluginServer::dispatchProcess(int timeout)
 {
-    timespec ts_timeout;
-    clock_gettime(CLOCK_REALTIME, &ts_timeout);
-    time_t seconds = timeout / 1000;
-    ts_timeout.tv_sec += seconds;
-    ts_timeout.tv_nsec += (timeout - seconds * 1000) * 1000000;
-    if (ts_timeout.tv_nsec >= 1000000000) {
-        ts_timeout.tv_nsec -= 1000000000;
-        ts_timeout.tv_sec++;
-    }
-
-    if (sem_timedwait(&m_shmControl->runServer, &ts_timeout)) {
-        if (errno == ETIMEDOUT) {
-            return;
-        } else {
-            throw RemotePluginClosedException();
-        }
+    char msg;
+    if (read(m_shmControl->runServerRead, &msg, 1) != 1) {
+        throw RemotePluginClosedException();
     }
 
     while (dataAvailable(&m_shmControl->ringBuffer)) {
         dispatchProcessEvents();
     }
 
-    if (sem_post(&m_shmControl->runClient)) {
-        std::cerr << "Could not post to semaphore\n";
+    msg = 0;
+    if (write(m_shmControl->runClientWrite, &msg, 1) != 1) {
+        throw RemotePluginClosedException();
     }
 }
 

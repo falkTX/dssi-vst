@@ -88,12 +88,17 @@ RemotePluginClient::RemotePluginClient() :
     }
 
     memset(m_shmControl, 0, sizeof(ShmControl));
-    if (sem_init(&m_shmControl->runServer, 1, 0)) {
-        throw((std::string)"Failed to initialize shared memory semaphore");
+    int pipeFds[2];
+    if (pipe(pipeFds) != 0) {
+        throw((std::string)"Failed to initialize communication pipe");
     }
-    if (sem_init(&m_shmControl->runClient, 1, 0)) {
-        throw((std::string)"Failed to initialize shared memory semaphore");
+    m_shmControl->runServerRead = pipeFds[0];
+    m_shmControl->runServerWrite = pipeFds[1];
+    if (pipe(pipeFds) != 0) {
+        throw((std::string)"Failed to initialize communication pipe");
     }
+    m_shmControl->runClientRead = pipeFds[0];
+    m_shmControl->runClientWrite = pipeFds[1];
 
     sprintf(tmpFileBase, "/dssi-vst-rplugin_shm_XXXXXX");
     m_shmFd = shm_mkstemp(tmpFileBase);
@@ -160,6 +165,14 @@ RemotePluginClient::cleanup()
 	m_shm = 0;
     }
     if (m_shmControl) {
+        if (m_shmControl->runServerRead)
+            close(m_shmControl->runServerRead);
+        if (m_shmControl->runServerWrite)
+            close(m_shmControl->runServerWrite);
+        if (m_shmControl->runClientRead)
+            close(m_shmControl->runClientRead);
+        if (m_shmControl->runClientWrite)
+            close(m_shmControl->runClientWrite);
         munmap(m_shmControl, sizeof(ShmControl));
         m_shmControl = 0;
     }
@@ -469,12 +482,12 @@ RemotePluginClient::process(float **inputs, float **outputs)
 void
 RemotePluginClient::waitForServer()
 {
-    sem_post(&m_shmControl->runServer);
+    char msg = 0;
+    if (write(m_shmControl->runServerWrite, &msg, 1) != 1) {
+	throw RemotePluginClosedException();
+    }
 
-    timespec ts_timeout;
-    clock_gettime(CLOCK_REALTIME, &ts_timeout);
-    ts_timeout.tv_sec += 5;
-    if (sem_timedwait(&m_shmControl->runClient, &ts_timeout) != 0) {
+    if (read(m_shmControl->runClientRead, &msg, 1) != 1) {
 	throw RemotePluginClosedException();
     }
 }

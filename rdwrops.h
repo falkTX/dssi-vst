@@ -32,16 +32,11 @@ struct RingBuffer
 
 struct ShmControl
 {
-    // 32 and 64-bit binaries align semaphores differently.
-    // Let's make sure there's plenty of room for either one.
-    union {
-        sem_t runServer;
-        char alignServerSem[32];
-    };
-    union {
-        sem_t runClient;
-        char alignClientSem[32];
-    };
+    // Pipe will be used by both 64- and 32- bit, so store as the former.
+    int64_t runServerRead;
+    int64_t runServerWrite;
+    int64_t runClientRead;
+    int64_t runClientWrite;
     RingBuffer ringBuffer;
 };
 
