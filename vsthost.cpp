@@ -189,13 +189,13 @@ alsaSeqCallback(snd_seq_t *alsaSeqHandle)
 }
 
 int
-openAlsaSeq(const char *pluginName)
+openAlsaSeq(const char *clientName)
 {
     int portid;
     char alsaName[75];
 
-    if (pluginName[0]) {
-	sprintf(alsaName, "%s VST", pluginName);
+    if (clientName[0]) {
+	sprintf(alsaName, "%s VST", clientName);
     } else {
 	sprintf(alsaName, "VST Host");
     }
@@ -330,26 +330,40 @@ shutdownJack(void *arg)
 }
 
 int
-openJack(const char *pluginName)
+openJack(const char * pluginName, bool unique)
 {
-    const char **ports = 0;
-    char jackName[26];
-    char tmpbuf[21];
-    int i = 0, j = 0;
 
-    for (i = 0; i < 20 && pluginName[i]; ++i) {
-	if (isalpha(pluginName[i])) {
-	    tmpbuf[j] = tolower(pluginName[i]);
-	    ++j;
-	}
-    }
-    tmpbuf[j] = '\0';
-    snprintf(jackName, 26, "vst_%s", tmpbuf);
+    // A full port name has the format "<client>:<port>"
+    // and is terminated by the usual \0 character.
+    // http://jackaudio.org/files/docs/html/group__PortFunctions.html
+    // Here we allocate half of the remaining characters to each part
+    // of the "client:port" pair. If needed, this can be redistributed.
 
-    if ((jackData.client = jack_client_open(jackName, JackNullOption, NULL)) == 0) {
-	fprintf(stderr, "ERROR: Failed to connect to JACK server -- jackd not running?\n");
-	return 1;
+    int  jackNameSize = (jack_port_name_size() - 2) / 2 + 1;
+    int  portNameSize = (jack_port_name_size() - 2) / 2 + 1;
+    char jackName[jackNameSize];
+    char portName[portNameSize];
+    jack_status_t jackStatus;
+
+    snprintf(jackName, jackNameSize, "%s", pluginName);
+
+    jackData.client = jack_client_open(
+      jackName,
+      unique ? JackUseExactName : JackNullOption,
+      &jackStatus);
+
+    if (jackData.client == 0) {
+        if (unique) {
+          fprintf(stderr, "ERROR: Failed to initialize JACK -- "
+                          "name not unique or jackd not running?");
+        } else {
+          fprintf(stderr, "ERROR: Failed to initialize JACK client -- "
+                          "jackd not running?\n");
+        }
+        return 1;
     }
+
+    fprintf(stderr, "JACK client name: %s\n", jack_get_client_name(jackData.client));
 
     jack_set_process_callback(jackData.client, jackProcess, 0);
     jack_on_shutdown(jackData.client, shutdownJack, 0);
@@ -360,13 +374,11 @@ openJack(const char *pluginName)
     plugin->setSampleRate(jackData.sample_rate);
     plugin->setBufferSize(jackData.buffer_size);
 
-    ports = jack_get_ports
-	 (jackData.client, NULL, NULL, JackPortIsPhysical | JackPortIsInput);
+    const char ** ports = jack_get_ports(
+	jackData.client, NULL, NULL, JackPortIsPhysical | JackPortIsInput);
 
     jackData.input_count = plugin->getInputCount();
     jackData.output_count = plugin->getOutputCount();
-
-    static char portName[100];
 
     if (jackData.input_count > 0) {
 
@@ -375,10 +387,11 @@ openJack(const char *pluginName)
 
 	for (int i = 0; i < jackData.input_count; ++i) {
 	    jackData.input_buffers[i] = 0;
-	    snprintf(portName, 100, "in_%d", i+1);
+	    snprintf(portName, portNameSize, "in_%d", i+1);
 	    jackData.input_ports[i] = jack_port_register
 		(jackData.client, portName,
 		 JACK_DEFAULT_AUDIO_TYPE, JackPortIsInput, 0);
+            fprintf(stderr, "JACK input port: %s\n", portName);
 	}
 
     } else {
@@ -393,10 +406,11 @@ openJack(const char *pluginName)
 
 	for (int i = 0; i < jackData.output_count; ++i) {
 	    jackData.output_buffers[i] = 0;
-	    snprintf(portName, 100, "out_%d", i+1);
+	    snprintf(portName, portNameSize, "out_%d", i+1);
 	    jackData.output_ports[i] = jack_port_register
 		(jackData.client, portName,
 		 JACK_DEFAULT_AUDIO_TYPE, JackPortIsOutput, 0);
+            fprintf(stderr, "JACK output port: %s\n", portName);
 	}
 
     } else {
@@ -453,27 +467,40 @@ closeJack()
 void
 usage()
 {
-    fprintf(stderr, "Usage: vsthost [-n] <dll>\n    -n  No GUI\n");
+    const char * usage_text =
+        "Usage: vsthost [-n] [-c <name>] [-u] <dll>\n"
+        "    -n No GUI\n"
+        "    -c Set client name\n"
+        "    -u Fail if name is not unique\n"
+        " <dll> Path to VST DLL\n\n"
+        "Environment: DSSI_PATH VST_PATH";
+    fprintf(stderr, usage_text);
     exit(2);
 }    
 
 int
 main(int argc, char **argv)
 {
-    char *dllname = 0;
-    bool  gui = true;
-
-    int npfd;
-    struct pollfd *pfd;
+    char *          dllname    = 0;
+    bool            gui        = true;
+    bool            unique     = false;
+    int             npfd;
+    struct pollfd * pfd;
+    std::string     clientName = "";
 
     while (1) {
-	int c = getopt(argc, argv, "nd:");
+	int c = getopt(argc, argv, "nd:c:u");
 	
-	if (c == -1) break;
-	else if (c == 'n') {
+	if (c == -1) {
+            break;
+        } else if (c == 'n') {
 	    gui = false;
 	} else if (c == 'd') {
 	    fprintf(stderr, "NOTE: Ignoring unsupported -d option for backward compatibility\n");
+        } else if (c == 'c') {
+            clientName = optarg;
+        } else if (c == 'u') {
+            unique = true;
 	} else {
 	    usage();
 	}
@@ -505,8 +532,6 @@ main(int argc, char **argv)
 	bail(0);
     }
 
-    std::string pluginName = plugin->getName();
-
     // prevent child threads from wanting to handle signals
     sigset_t _signals;
     sigemptyset(&_signals);
@@ -522,13 +547,17 @@ main(int argc, char **argv)
 
     bool hasMIDI = plugin->hasMIDIInput();
 
+    if (clientName.empty()) {
+        clientName = plugin->getName();
+    }
+
     if (hasMIDI) {
-	if (openAlsaSeq(pluginName.c_str())) {
+	if (openAlsaSeq(clientName.c_str())) {
 	    plugin->warn("Failed to connect to ALSA sequencer MIDI interface");
 	    bail(0);
 	}
     }
-    if (openJack(pluginName.c_str())) {
+    if (openJack(clientName.c_str(), unique)) {
 	plugin->warn("Failed to connect to JACK audio server (jackd not running?)");
 	bail(0);
     }
